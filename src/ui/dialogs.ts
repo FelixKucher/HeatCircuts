@@ -154,6 +154,19 @@ export function openBuildingDialog(store: Store): void {
         'by',
       )}</section>
       <section><h3>Bauteile</h3><div class="constructions">${SLOT_ORDER.map((s) => constructionEditor(p, s)).join('')}</div></section>
+      <section><h3>Gelände</h3>${grid(
+        [
+          { kind: 'select', key: 'terrain.type', label: 'Gelände', value: p.terrain.type, options: [['flat', 'eben'], ['slope', 'Hanglage (geneigte Ebene)']] },
+          { kind: 'num', key: 'terrain.gradeLow', label: p.terrain.type === 'slope' ? 'Geländehöhe Talseite' : 'Geländehöhe', value: p.terrain.gradeLow, unit: 'm', digits: 2, hint: 'relativ zu ±0,00 (OK FFB EG); negativ = unter dem Fußboden' },
+          ...(p.terrain.type === 'slope'
+            ? ([
+                { kind: 'num', key: 'terrain.rise', label: 'Anstieg Tal → Berg über die Hausbreite', value: p.terrain.rise, unit: 'm', digits: 2 },
+                { kind: 'select', key: 'terrain.uphill', label: 'Bergseite', value: p.terrain.uphill, options: [['N', 'Nord (oben im Plan)'], ['O', 'Ost (rechts)'], ['S', 'Süd (unten)'], ['W', 'West (links)']] },
+              ] as FieldSpec[])
+            : []),
+        ],
+        'tg',
+      )}<p class="note">Erdberührte Wandanteile werden je Außenwand aus dem Gelände ermittelt (EN ISO 13370) und lassen sich an der Wand überschreiben. Beispiel Hanglage: Garage talseitig auf Geländeniveau, Rückwand bergseitig im Erdreich.</p></section>
       <section><h3>Dach</h3>${grid(
         [
           { kind: 'select', key: 'roof.type', label: 'Dachform', value: r.type, options: [['gable', 'Satteldach'], ['hip', 'Walmdach'], ['shed', 'Pultdach'], ['flat', 'Flachdach'], ['none', 'kein Dach (Geschoss folgt)']] },
@@ -197,6 +210,12 @@ export function applyBuildingField(store: Store, key: string, val: unknown): voi
       const slot = field as ConstructionSlot;
       if (val !== 'custom') p.building.constructions[slot] = constructionFromTemplate(String(val));
       applyConstructionUValues(p.building);
+      return;
+    }
+    if (group === 'terrain') {
+      const t = p.terrain as unknown as Record<string, unknown>;
+      if (typeof val === 'number') t[field] = field === 'rise' ? Math.max(0, val) : val;
+      else if (typeof val === 'string') t[field] = val;
       return;
     }
     if (group === 'roof') {

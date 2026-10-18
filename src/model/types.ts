@@ -36,6 +36,8 @@ export interface Wall {
   thickness: number;
   kind: WallKind;
   openings: Opening[];
+  /** Höhe des angeschütteten Erdreichs über OK FFB dieses Geschosses in m; undefined/null = aus dem Gelände */
+  earthHeight?: number | null;
 }
 
 /** Heizfläche eines Raums. Ein Raum kann mehrere Heizflächen haben (z. B. Fußboden + Wand). */
@@ -191,6 +193,17 @@ export interface Roof {
   kneeWall: number;
 }
 
+/** Gelände: eben oder geneigte Ebene (Hanglage). Plan oben = Norden, Osten = +x. */
+export interface Terrain {
+  type: 'flat' | 'slope';
+  /** Geländehöhe an der Talseite (bzw. überall bei ebenem Gelände) relativ zu ±0,00 in m */
+  gradeLow: number;
+  /** Höhenunterschied Talseite → Bergseite über die Gebäudetiefe in m */
+  rise: number;
+  /** Bergseite */
+  uphill: 'N' | 'O' | 'S' | 'W';
+}
+
 export interface BuildingData {
   client: string;
   address: string;
@@ -262,6 +275,7 @@ export interface Project {
   building: BuildingData;
   design: DesignParams;
   roof: Roof;
+  terrain: Terrain;
   floors: Floor[];
   heatSource: HeatSource | null;
   /** Assistent abgeschlossen / aktueller Schritt */

@@ -11,6 +11,8 @@ import { ROOM_TYPES } from '../model/catalog';
 import { layersResistance } from '../model/constructions';
 import { area, collinearOverlap, dist, norm, sub, add, mul } from '../geometry/geom';
 import { footprint, inVoid, inWalls, roomAt, samplePolygon } from '../geometry/sampling';
+import { roomSpanOnWall } from '../geometry/wallfield';
+import { buildingBounds, buriedHeight, type Bounds } from '../geometry/terrain';
 
 /** ρ·c_p der Luft in Wh/(m³·K) */
 export const RHO_CP_AIR = 0.34;
@@ -50,6 +52,9 @@ export interface HeatLoadBreakdown {
   ceilingParts: Record<string, BoundaryShare>;
   /** Bodenfläche über Deckenöffnungen (Treppe, Luftraum) */
   voidArea: number;
+  /** erdberührte Außenwandfläche (Hanglage, Keller) in m² und ihr Anteil am Verlust in W */
+  earthWallArea: number;
+  earthWall: number;
 }
 
 // ---------- Erdreich nach EN ISO 13370 ----------
@@ -63,6 +68,8 @@ export interface GroundParams {
   /** Tiefe des Kellerfußbodens unter Gelände (0 = Bodenplatte) */
   z: number;
   uBasementWall: number;
+  /** wirksame Dicke der Außenwand d_w nach EN ISO 13370 */
+  dw: number;
 }
 
 export function uSlabOnGround(bPrime: number, dt: number): number {
@@ -91,6 +98,7 @@ export interface BuildingContext {
   isLowest(f: Floor): boolean;
   footprintInside(f: Floor): ((p: { x: number; y: number }) => boolean) | null;
   ground: GroundParams;
+  bounds: Bounds | null;
 }
 
 export function buildContext(project: Project): BuildingContext {
@@ -113,10 +121,13 @@ export function buildContext(project: Project): BuildingContext {
   const bPrime = Math.max(0.5, A / (0.5 * P));
   const rf = layersResistance(b.constructions.groundSlab.layers);
   const dt = w + LAMBDA_GROUND * (0.17 + rf + 0.04);
-  const z = lowest.belowGrade ? Math.max(0.5, -lowest.elevation || lowest.storeyHeight) : 0;
-  const uSlab = z > 0 ? uBasementFloor(bPrime, dt, z) : uSlabOnGround(bPrime, dt);
   const rw = layersResistance(b.constructions.extWall.layers);
   const dw = LAMBDA_GROUND * (0.13 + rw + 0.04);
+  // Einbindetiefe des untersten Fußbodens: längengewichtetes Mittel der Erdanschüttung (Hanglage, Keller)
+  const bounds = buildingBounds(project);
+  const zBuried = perim > 0 ? ext.reduce((a, x) => a + dist(x.a, x.b) * buriedHeight(project, lowest, x, bounds), 0) / perim : 0;
+  const z = lowest.belowGrade ? Math.max(0.5, zBuried) : zBuried > 0.05 ? zBuried : 0;
+  const uSlab = z > 0 ? uBasementFloor(bPrime, dt, z) : uSlabOnGround(bPrime, dt);
   return {
     sorted,
     below: (f) => sorted[(idx.get(f.id) ?? 0) - 1] ?? null,
@@ -124,7 +135,8 @@ export function buildContext(project: Project): BuildingContext {
     isTop: (f) => idx.get(f.id) === sorted.length - 1,
     isLowest: (f) => idx.get(f.id) === 0,
     footprintInside: (f) => fp(f)?.inside ?? null,
-    ground: { area: A, perimeter: P, bPrime, dt, uSlab, z, uBasementWall: uBasementWall(z, dt, dw) },
+    ground: { area: A, perimeter: P, bPrime, dt, uSlab, z, uBasementWall: uBasementWall(z, dt, dw), dw },
+    bounds,
   };
 }
 
@@ -212,12 +224,34 @@ export function roomHeatLoad(project: Project, room: Room, floor: Floor, ctx: Bu
   const grossExt = extLen * H;
   const netExt = Math.max(0, grossExt - winA - doorA);
   let extWall: number;
-  if (floor.belowGrade && ctx.ground.z > 0) {
-    // Kellerwände: erdberührter Anteil bis z, Rest gegen Außenluft
-    const zIn = Math.min(H, ctx.ground.z);
-    const share = zIn / H;
-    extWall = netExt * (1 - share) * (b.uExtWall + dU) * dT + F_G1 * netExt * share * ctx.ground.uBasementWall * G_W * (room.thetaI - b.thetaMeanYear);
-  } else extWall = netExt * (b.uExtWall + dU) * dT;
+  let earthWallArea = 0;
+  let earthWall = 0;
+  if (room.extWallLengthOverride != null) {
+    // Handangabe: Erdanteil wie Kellergeschoss, sonst Außenluft
+    const share = floor.belowGrade ? Math.min(H, ctx.ground.z) / H : 0;
+    earthWallArea = netExt * share;
+    earthWall = F_G1 * earthWallArea * ctx.ground.uBasementWall * G_W * (room.thetaI - b.thetaMeanYear);
+    extWall = netExt * (1 - share) * (b.uExtWall + dU) * dT + earthWall;
+  } else {
+    // je Außenwand: erdberührter Teil bis h_b (Gelände, Hanglage) nach EN ISO 13370, darüber Außenluft
+    extWall = 0;
+    for (const w of floor.walls) {
+      if (w.kind !== 'exterior') continue;
+      const span = roomSpanOnWall(w, room);
+      if (!span) continue;
+      const len = span.t1 - span.t0;
+      if (len < 0.05) continue;
+      const hb = buriedHeight(project, floor, w, ctx.bounds, span.t0, span.t1);
+      const wOps = ops.filter((o) => o.wall === w).reduce((a, o) => a + o.area, 0);
+      const gross = len * H;
+      const buried = len * hb;
+      const above = Math.max(0, gross - buried - wOps);
+      const ew = hb > 0.02 ? F_G1 * buried * uBasementWall(hb, ctx.ground.dt, ctx.ground.dw) * G_W * (room.thetaI - b.thetaMeanYear) : 0;
+      earthWallArea += buried;
+      earthWall += ew;
+      extWall += above * (b.uExtWall + dU) * dT + ew;
+    }
+  }
   const windows = winA * (b.uWindow + dU) * dT + doorA * (b.uDoor + dU) * dT;
   const unheatedWalls = unhLen * H * (b.uUnheatedWall + dU) * B_UNHEATED_WALL_DEFAULT * dT;
 
@@ -324,5 +358,7 @@ export function roomHeatLoad(project: Project, room: Room, floor: Floor, ctx: Bu
     floorParts,
     ceilingParts,
     voidArea,
+    earthWallArea,
+    earthWall,
   };
 }

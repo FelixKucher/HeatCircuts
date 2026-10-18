@@ -1,4 +1,4 @@
-import type { BuildingData, DesignParams, Floor, HeatingSurface, Project, Roof, Room, SurfaceKind, Vec, Wall, WallKind } from './types';
+import type { BuildingData, DesignParams, Floor, HeatingSurface, Project, Roof, Room, SurfaceKind, Terrain, Vec, Wall, WallKind } from './types';
 import { BUILDING_STANDARDS, CLIMATE_LOCATIONS, COVERINGS, DEFAULT_ALLOWED_SPACINGS, PIPES, ROOM_TYPES, SCREEDS } from './catalog';
 import { ageClassFor, defaultConstructions, uValue, WINDOW_TYPES } from './constructions';
 import { HEATING_SYSTEMS } from './systems';
@@ -93,6 +93,10 @@ export function defaultRoof(): Roof {
   return { type: 'gable', pitch: 35, ridge: 'x', overhang: 0.5, insulation: 'topSlab', kneeWall: 0.5 };
 }
 
+export function defaultTerrain(): Terrain {
+  return { type: 'flat', gradeLow: -0.2, rise: 0, uphill: 'N' };
+}
+
 export function newFloor(name: string, elevation: number): Floor {
   return {
     id: uid('f'),
@@ -118,6 +122,7 @@ export function newProject(name = 'Neues Projekt'): Project {
     building: defaultBuilding(),
     design: defaultDesign(),
     roof: defaultRoof(),
+    terrain: defaultTerrain(),
     floors: [newFloor('Erdgeschoss', 0)],
     heatSource: null,
     wizard: { done: false, step: 0 },
@@ -213,6 +218,7 @@ export function migrateProject(raw: unknown): Project {
   p.design = { ...base.design, ...(p.design ?? {}) };
   if (!Array.isArray(p.design.allowedSpacings) || !p.design.allowedSpacings.length) p.design.allowedSpacings = DEFAULT_ALLOWED_SPACINGS.slice();
   p.roof = { ...base.roof, ...(p.roof ?? {}) };
+  p.terrain = { ...base.terrain, ...(p.terrain ?? {}) };
   p.wizard = p.wizard ?? { done: true, step: 0 };
   for (const f of p.floors ?? []) {
     f.voids = f.voids ?? [];

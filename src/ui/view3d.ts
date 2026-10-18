@@ -10,6 +10,7 @@ import { add, bbox, centroid, cross, dist, mul, norm, sub, v } from '../geometry
 import { defaultField, fieldRuns } from '../geometry/wallfield';
 import { subtractVoids } from '../geometry/subtract';
 import { circuitDrawings } from './render';
+import { buildingBounds, groundLevel } from '../geometry/terrain';
 
 export interface View3DOptions {
   showRoof: boolean;
@@ -49,6 +50,7 @@ export class View3D {
   private raycaster = new THREE.Raycaster();
   private needsFit = true;
   private rebuildTimer = 0;
+  private terrain = new THREE.Group();
   options: View3DOptions = { showRoof: true, upToActive: false, showCircuits: true };
 
   constructor(
@@ -70,11 +72,8 @@ export class View3D {
     const dir = new THREE.DirectionalLight(0xffffff, 1.4);
     dir.position.set(-12, 20, -8);
     this.scene.add(hemi, dir, this.group);
-    const ground = new THREE.Mesh(new THREE.CircleGeometry(60, 48), new THREE.MeshStandardMaterial({ color: 0xc8ceb8, roughness: 1 }));
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.y = -0.02;
-    ground.name = 'ground';
-    this.scene.add(ground);
+    this.terrain.name = 'terrain';
+    this.scene.add(this.terrain);
     new ResizeObserver(() => this.resize()).observe(host);
     this.renderer.domElement.addEventListener('dblclick', (e) => this.pick(e));
   }
@@ -144,8 +143,87 @@ export class View3D {
     for (const f of shown) this.buildFloor(p, f, d, sorted, f.id === active.id);
     const top = shown[shown.length - 1];
     if (this.options.showRoof && top && top.id === sorted[sorted.length - 1].id) this.buildRoof(p, top);
+    this.buildTerrain(p, sorted);
     if (this.needsFit) this.fit();
     this.draw();
+  }
+
+  /** Gelände als Netz mit Aussparung unter dem Gebäude, Baugrube bis unter den untersten Fußboden */
+  private buildTerrain(p: Project, sorted: Floor[]): void {
+    for (const c of [...this.terrain.children]) {
+      this.terrain.remove(c);
+      const m = c as THREE.Mesh;
+      m.geometry?.dispose();
+      (m.material as THREE.Material | undefined)?.dispose();
+    }
+    const b0 = buildingBounds(p);
+    const earth = new THREE.MeshStandardMaterial({ color: 0xc8ceb8, roughness: 1, side: THREE.DoubleSide });
+    if (!b0) {
+      const g = new THREE.Mesh(new THREE.CircleGeometry(60, 48), earth);
+      g.rotation.x = -Math.PI / 2;
+      g.position.y = p.terrain.gradeLow - 0.01;
+      this.terrain.add(g);
+      return;
+    }
+    const tMax = Math.max(0.1, ...sorted.flatMap((f) => f.walls.filter((w) => w.kind === 'exterior').map((w) => w.thickness)));
+    const b = { min: v(b0.min.x - tMax / 2, b0.min.y - tMax / 2), max: v(b0.max.x + tMax / 2, b0.max.y + tMax / 2) };
+    const lines = (lo: number, hi: number) => {
+      const out: number[] = [];
+      const seg = (a: number, z: number, n: number) => {
+        for (let i = 0; i < n; i++) out.push(a + ((z - a) * i) / n);
+      };
+      seg(lo - 40, lo, 16);
+      seg(lo, hi, Math.max(2, Math.ceil((hi - lo) / 0.5)));
+      seg(hi, hi + 40, 16);
+      out.push(hi + 40);
+      return out;
+    };
+    const xs = lines(b.min.x, b.max.x);
+    const ys = lines(b.min.y, b.max.y);
+    const pos: number[] = [];
+    const idx: number[] = [];
+    const h = (x: number, y: number) => groundLevel(p, v(x, y), b0) - 0.01;
+    for (const y of ys) for (const x of xs) pos.push(x, h(x, y), y);
+    const W = xs.length;
+    const eps = 1e-6;
+    for (let j = 0; j < ys.length - 1; j++)
+      for (let i = 0; i < W - 1; i++) {
+        const cx = (xs[i] + xs[i + 1]) / 2;
+        const cy = (ys[j] + ys[j + 1]) / 2;
+        if (cx > b.min.x + eps && cx < b.max.x - eps && cy > b.min.y + eps && cy < b.max.y - eps) continue;
+        const a = j * W + i;
+        idx.push(a, a + W, a + 1, a + 1, a + W, a + W + 1);
+      }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    this.terrain.add(new THREE.Mesh(geo, earth));
+    // Baugrube: Seitenflächen vom Gelände bis unter den untersten Fußboden
+    const bottom = Math.min(...sorted.map((f) => f.elevation)) - 0.35;
+    const ring = [v(b.min.x, b.min.y), v(b.max.x, b.min.y), v(b.max.x, b.max.y), v(b.min.x, b.max.y)];
+    const sp: number[] = [];
+    for (let k = 0; k < 4; k++) {
+      const a = ring[k];
+      const c = ring[(k + 1) % 4];
+      const n = 24;
+      for (let i = 0; i < n; i++) {
+        const p0 = add(a, mul(sub(c, a), i / n));
+        const p1 = add(a, mul(sub(c, a), (i + 1) / n));
+        const z0 = h(p0.x, p0.y);
+        const z1 = h(p1.x, p1.y);
+        if (Math.max(z0, z1) <= bottom) continue;
+        sp.push(p0.x, z0, p0.y, p0.x, bottom, p0.y, p1.x, z1, p1.y, p1.x, z1, p1.y, p0.x, bottom, p0.y, p1.x, bottom, p1.y);
+      }
+    }
+    const sg = new THREE.BufferGeometry();
+    sg.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3));
+    sg.computeVertexNormals();
+    this.terrain.add(new THREE.Mesh(sg, new THREE.MeshStandardMaterial({ color: 0x8f8170, roughness: 1, side: THREE.DoubleSide })));
+    const pit = new THREE.Mesh(new THREE.PlaneGeometry(b.max.x - b.min.x, b.max.y - b.min.y), new THREE.MeshStandardMaterial({ color: 0x7a6e60, roughness: 1 }));
+    pit.rotation.x = -Math.PI / 2;
+    pit.position.set((b.min.x + b.max.x) / 2, bottom, (b.min.y + b.max.y) / 2);
+    this.terrain.add(pit);
   }
 
   private fit(): void {

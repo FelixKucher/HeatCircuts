@@ -8,6 +8,7 @@ import { autoLayout } from '../src/calc/autolayout';
 import { floorShort, newFloor, newProject, newRoom, newSurface, newWall, migrateProject, applyYearBuilt } from '../src/model/factory';
 import { uValue, CONSTRUCTION_TEMPLATES } from '../src/model/constructions';
 import { v } from '../src/geometry/geom';
+import { buriedHeight } from '../src/geometry/terrain';
 
 describe('EN 1264', () => {
   it('Grenzwärmestromdichte bei 29 °C / 20 °C ≈ 100 W/m²', () => {
@@ -217,6 +218,27 @@ describe('Heizlast und Auslegung', () => {
     expect(p.floors[0].walls[0].openings).toEqual([]);
     expect(p.floors[0].rooms[0].surfaces[0].spacing).toBe(0.1);
     expect(p.floors[0].rooms[0].surfaces[0].pattern).toBe('meander');
+  });
+});
+
+describe('Hanglage', () => {
+  it('Bergseite im Erdreich, Talseite an Außenluft', () => {
+    const { p, f, r } = setup();
+    const flat = roomHeatLoad(p, r, f, buildContext(p));
+    expect(flat.earthWallArea).toBe(0);
+    p.terrain = { type: 'slope', gradeLow: -0.1, rise: 2.6, uphill: 'S' };
+    const ctx = buildContext(p);
+    const hl = roomHeatLoad(p, r, f, ctx);
+    // Südwand (y = 4) fast voll eingeschüttet, Nordwand frei, Seitenwände etwa zur Hälfte
+    const south = f.walls[2];
+    expect(buriedHeight(p, f, south, ctx.bounds)).toBeCloseTo(2.5, 1);
+    expect(buriedHeight(p, f, f.walls[0], ctx.bounds)).toBe(0);
+    expect(buriedHeight(p, f, f.walls[1], ctx.bounds)).toBeGreaterThan(1);
+    expect(hl.earthWallArea).toBeGreaterThan(15);
+    expect(ctx.ground.z).toBeGreaterThan(0.8);
+    expect(hl.extWall).toBeLessThan(flat.extWall);
+    f.walls[2].earthHeight = 0;
+    expect(roomHeatLoad(p, r, f, buildContext(p)).earthWallArea).toBeLessThan(hl.earthWallArea);
   });
 });
 

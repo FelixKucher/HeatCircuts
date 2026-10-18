@@ -1,3 +1,4 @@
+import { buildingBounds, buriedHeight } from '../geometry/terrain';
 import type { Floor, HeatingSurface, Opening, OpeningKind, Project, Room, SurfaceKind, Wall } from '../model/types';
 import type { Store } from '../model/store';
 import type { RoomResult, SurfaceResult, Warning } from '../calc/design';
@@ -309,6 +310,7 @@ export class Sidebar {
           .join('');
       html += `<div class="group results"><h3>Heizlast</h3><dl class="kv">
         <dt>Außenwand</dt><dd>${W(hl.extWall)}</dd>
+        ${hl.earthWall > 0.5 ? `<dt class="indent">davon erdberührt (${num(hl.earthWallArea, 1)} m²)</dt><dd>${W(hl.earthWall)}</dd>` : ''}
         <dt>Fenster und Türen</dt><dd>${W(hl.windows)}</dd>
         ${hl.unheatedWalls ? `<dt>Wand zu unbeheizt</dt><dd>${W(hl.unheatedWalls)}</dd>` : ''}
         <dt>Boden</dt><dd>${W(hl.floor)}</dd>${parts(hl.floorParts)}
@@ -341,6 +343,20 @@ export class Sidebar {
         { kind: 'select', key: 'wall.kind', label: 'Art', value: w.kind, options: [['exterior', 'Außenwand'], ['interior', 'Innenwand'], ['unheated', 'Wand zu unbeheiztem Raum']] },
         { kind: 'num', key: 'wall.thickness', label: 'Dicke', value: w.thickness, unit: 'cm', scale: 100, digits: 1 },
         { kind: 'num', key: 'wall.length', label: 'Länge (Achse)', value: l, unit: 'm', digits: 3 },
+        ...(w.kind === 'exterior'
+          ? ([
+              {
+                kind: 'num',
+                key: 'wall.earthHeight',
+                label: 'Erdanschüttung über OK FFB',
+                value: w.earthHeight ?? null,
+                unit: 'm',
+                digits: 2,
+                placeholder: `auto ${num(buriedHeight(this.store.project, floor, w, buildingBounds(this.store.project)), 2)}`,
+                hint: 'leer = aus dem Gelände (Hanglage)',
+              },
+            ] as FieldSpec[])
+          : []),
       ],
       'w',
     );
@@ -628,6 +644,7 @@ export class Sidebar {
         if (!w) return;
         if (field === 'kind' && typeof val === 'string') w.kind = val as typeof w.kind;
         if (field === 'thickness' && numv !== null && numv > 0.01) w.thickness = numv;
+        if (field === 'earthHeight') w.earthHeight = numv === null ? null : Math.max(0, numv);
         if (field === 'length' && numv !== null && numv > 0.01) {
           const dir = norm(sub(w.b, w.a));
           if (len(dir) > 0) w.b = add(w.a, mul(dir, numv));
