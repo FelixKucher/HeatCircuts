@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HausCAD</title>
+    <meta name="description" content="Häuser zeichnen: Wände, Räume, Türen, Fenster, Treppen, Möbel – Grundriss und 3D im Browser." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23255f85'/%3E%3Cpath d='M7 16 16 8l9 8v9H7z' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linejoin='round'/%3E%3Cpath d='M13 25v-6h6v6' fill='none' stroke='%23fff' stroke-width='2.4'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="top">
+        <div class="brand"><span class="logo"></span><b>HausCAD</b></div>
+        <button class="proj-name" id="proj-name" title="Projektname ändern"></button>
+        <nav class="menus" id="menus"></nav>
+        <div class="spacer"></div>
+        <div class="seg" id="layout-switch" role="group" aria-label="Ansicht">
+          <button data-layout="plan" title="Nur Grundriss (1)">Plan</button>
+          <button data-layout="split" title="Grundriss und 3D (2)">Geteilt</button>
+          <button data-layout="3d" title="Nur 3D (3)">3D</button>
+        </div>
+        <button class="icon-btn" id="btn-undo" title="Rückgängig (⌘/Strg Z)"></button>
+        <button class="icon-btn" id="btn-redo" title="Wiederholen (⇧⌘/Strg Z)"></button>
+        <button class="icon-btn" id="btn-theme" title="Hell / Dunkel"></button>
+      </header>
+      <aside class="tools" id="tools"></aside>
+      <aside class="left" id="left">
+        <div class="panel-title">Katalog</div>
+        <input id="cat-search" type="search" placeholder="Möbel suchen …" autocomplete="off" />
+        <div id="catalog" class="catalog"></div>
+        <div class="panel-title small">Möbel im Geschoss <span id="fur-count"></span></div>
+        <div id="fur-list" class="fur-list"></div>
+      </aside>
+      <main class="center" id="center" data-layout="split">
+        <div class="levels" id="levels"></div>
+        <div class="tool-options" id="tool-options"></div>
+        <section class="plan-host" id="plan-host">
+          <div class="zoom">
+            <button id="z-in" title="Vergrößern">+</button><button id="z-out" title="Verkleinern">−</button><button id="z-fit" title="Einpassen (Pos1)">⤢</button>
+          </div>
+          <div class="compass" id="compass" title="Norden"></div>
+        </section>
+        <div class="splitter" id="splitter" title="Ziehen, um die Aufteilung zu ändern"></div>
+        <section class="view-host" id="view-host">
+          <div class="view-ctl">
+            <div class="seg small" id="view-mode">
+              <button data-mode="orbit" class="on" title="Luftbild: ziehen dreht, rechts verschiebt, Rad zoomt">Luftbild</button>
+              <button data-mode="walk" title="Rundgang: W A S D / Pfeile, ziehen schaut, Q/E hoch/runter">Rundgang</button>
+            </div>
+            <label class="chk"><input type="checkbox" id="v-all" checked />alle Geschosse</label>
+            <label class="chk"><input type="checkbox" id="v-roof" checked />Dach</label>
+            <label class="chk"><input type="checkbox" id="v-shadow" checked />Schatten</label>
+          </div>
+        </section>
+      </main>
+      <aside class="props" id="props"></aside>
+      <footer class="status">
+        <span id="hint"></span>
+        <span class="spacer"></span>
+        <span id="coords" class="mono"></span>
+        <span id="saved" class="muted"></span>
+      </footer>
+    </div>
+    <div id="modal-root"></div>
+    <input type="file" id="file-open" accept=".hauscad,.json,application/json" hidden />
+    <input type="file" id="file-image" accept="image/*" hidden />
+    <input type="file" id="file-dxf" accept=".dxf" hidden />
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>

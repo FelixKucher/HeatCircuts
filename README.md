@@ -5,6 +5,8 @@ metrische Einheiten, °C, Heizlast in Anlehnung an **EN 12831-1 / DIN/TS 12831-1
 U-Werte nach **EN ISO 6946** und Auslegung nach **EN 1264-2/-3/-5**.
 Die App läuft vollständig im Browser, ohne Server und ohne Konto.
 
+**Neu: [HausCAD](cad/README.md)** – eigenständiges Haus-CAD (Wände, Räume, Türen, Fenster, Treppen, Möbel, 2D + 3D) mit Übergabe an HeatCircuits: `npm run cad:dev`.
+
 ## Ablauf
 
 Der **Planungsassistent** führt durch acht Schritte:
@@ -28,6 +30,7 @@ Der **Planungsassistent** führt durch acht Schritte:
 | Heizflächen | mehrere je Raum: Fußboden (Nass, Fräs, Trocken, Elektro), Wandheizung (Putz, Trockenbau), Deckenheizung (Putz, Gipskarton) |
 | Verlegung | Schnecke (bifilar) oder Mäander; Ecken mit Mindestbiegeradius 5 × D, enge 180°-Umlenkungen als Omega-Bogen; Aussparung von Treppenlöchern |
 | Wandansicht | Doppelklick auf eine Wand: Abwicklung von der Raumseite mit Öffnungen, verschiebbaren Heizfeldern und Rohrbahnen um Fenster |
+| Hanglage | Gelände als geneigte Ebene (Bergseite, Anstieg); Erdanschüttung je Außenwand automatisch oder von Hand, erdberührte Wandanteile nach EN ISO 13370 |
 | 3D | Wände mit Öffnungen, Böden mit Treppenlöchern, Heizkreise, Wand- und Deckenheizflächen, Treppen, Sattel-, Walm-, Pult- und Flachdach mit Kniestock |
 | Leitungen | Anbindeleitungen Raum → Verteiler (automatisch per A* oder manuell), Verteiler → Wärmeerzeuger inkl. Steigleitung |
 | Ergebnisse | Heizlast je Bauteil und Nachbarfläche, Heizflächen, Heizkreise mit Druckverlust und Abgleich, Verteiler, Materialliste (Rohr je Typ, Rollen, Heizmatten, Randdämmstreifen) |

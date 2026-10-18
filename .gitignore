@@ -4,3 +4,5 @@ dist-single/
 *.log
 .DS_Store
 dist-artifact/
+dist-cad
+dist-cad-single

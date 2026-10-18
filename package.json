@@ -11,7 +11,11 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "build:artifact": "npm run build:single && node scripts/build-artifact.mjs"
+    "build:artifact": "npm run build:single && node scripts/build-artifact.mjs",
+    "cad:dev": "vite --config cad/vite.config.ts",
+    "cad:build": "tsc --noEmit && vite build --config cad/vite.config.ts",
+    "cad:build:single": "vite build --config cad/vite.config.ts --mode single",
+    "cad:build:artifact": "npm run cad:build:single && node scripts/build-artifact.mjs dist-cad-single hauscad.html"
   },
   "devDependencies": {
     "@types/three": "0.186.0",
