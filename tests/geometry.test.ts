@@ -6,6 +6,19 @@ import { newWall } from '../src/model/factory';
 
 const rect = (x0: number, y0: number, x1: number, y1: number) => [v(x0, y0), v(x1, y0), v(x1, y1), v(x0, y1)];
 
+import { pipePathD } from '../src/geometry/pipepath';
+
+describe('Rohrbögen', () => {
+  it('Ecken werden als Bogen ausgeführt, enge Umlenkungen als Omega', () => {
+    const d = pipePathD([v(0, 0), v(2, 0), v(2, 2)], 0.08);
+    expect(d).toContain('A0.08 0.08');
+    const stats = { omegas: 0 };
+    const u = pipePathD([v(0, 0), v(2, 0), v(2, 0.075), v(0, 0.075)], 0.08, stats);
+    expect(stats.omegas).toBe(1);
+    expect(u).toContain(' 0 1 ');
+  });
+});
+
 describe('Geometrie', () => {
   it('Fläche und Einrücken eines Rechtecks', () => {
     const r = rect(0, 0, 4, 3);

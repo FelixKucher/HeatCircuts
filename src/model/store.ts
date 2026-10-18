@@ -1,7 +1,7 @@
 import type { Floor, ImageStore, Project } from './types';
 import { computeDesign, type DesignResult } from '../calc/design';
 
-export type SelectionKind = 'wall' | 'room' | 'manifold' | 'heatSource' | 'route';
+export type SelectionKind = 'wall' | 'room' | 'manifold' | 'heatSource' | 'route' | 'opening' | 'void';
 export interface Selection {
   kind: SelectionKind;
   id: string;
@@ -137,6 +137,8 @@ export class Store {
       (s.kind === 'room' && f.rooms.some((r) => r.id === s.id)) ||
       (s.kind === 'manifold' && f.manifolds.some((m) => m.id === s.id)) ||
       (s.kind === 'route' && f.routes.some((r) => r.id === s.id)) ||
+      (s.kind === 'void' && f.voids.some((x) => x.id === s.id)) ||
+      (s.kind === 'opening' && f.walls.some((w) => w.openings.some((o) => `${w.id}|${o.id}` === s.id))) ||
       (s.kind === 'heatSource' && this.project.heatSource?.floorId === f.id);
     if (!exists) this.selection = null;
   }

@@ -1,6 +1,6 @@
-// Datenmodell von HeatCircuits.
+// Datenmodell von HeatCircuits (Version 2).
 // Alle Längen in Metern, Temperaturen in °C, U-Werte in W/(m²·K), Wärmewiderstände in m²·K/W.
-// Planlage: x nach rechts, y nach unten (wie in der Bildschirmdarstellung).
+// Planlage: x nach rechts, y nach unten (wie in der Bildschirmdarstellung), z nach oben.
 
 export interface Vec {
   x: number;
@@ -8,9 +8,25 @@ export interface Vec {
 }
 
 export type WallKind = 'exterior' | 'interior' | 'unheated';
-export type FloorBoundary = 'ground' | 'unheated' | 'heated' | 'outside';
-export type CeilingBoundary = 'roof' | 'unheated' | 'heated';
+export type FloorBoundary = 'auto' | 'ground' | 'unheated' | 'heated' | 'outside';
+export type CeilingBoundary = 'auto' | 'roof' | 'unheated' | 'heated';
 export type LayingPattern = 'spiral' | 'meander';
+export type SurfaceKind = 'floor' | 'ceiling' | 'wall';
+export type OpeningKind = 'window' | 'door' | 'entrance' | 'garage';
+export type VoidKind = 'stair' | 'spiral' | 'void';
+export type RoofType = 'gable' | 'hip' | 'shed' | 'flat' | 'none';
+
+/** Fenster, Tür oder Tor in einer Wand. Lage über den Abstand der Öffnungsmitte vom Wandanfang a. */
+export interface Opening {
+  id: string;
+  kind: OpeningKind;
+  /** Abstand der Öffnungsmitte vom Wandpunkt a entlang der Achse */
+  offset: number;
+  width: number;
+  height: number;
+  /** Brüstungshöhe über OK FFB */
+  sill: number;
+}
 
 export interface Wall {
   id: string;
@@ -19,6 +35,27 @@ export interface Wall {
   /** Wanddicke in m (Zeichnung = Wandachse). */
   thickness: number;
   kind: WallKind;
+  openings: Opening[];
+}
+
+/** Heizfläche eines Raums. Ein Raum kann mehrere Heizflächen haben (z. B. Fußboden + Wand). */
+export interface HeatingSurface {
+  id: string;
+  kind: SurfaceKind;
+  /** Schlüssel in HEATING_SYSTEMS */
+  system: string;
+  /** Verlegeabstand VA in m (Wassersysteme) */
+  spacing: number;
+  pattern: LayingPattern;
+  /** belegter Anteil der Raumfläche (Boden/Decke), 0…1 */
+  coverage: number;
+  /** Elektro: installierte Leistung in W/m² */
+  electricPower: number;
+  /** Verlegeabstand von Hand festgelegt – die automatische Auslegung ändert ihn nicht */
+  spacingLocked?: boolean;
+  /** Wandheizung: Wand und Heizfeld (Abstand entlang der Wand ab a, Höhe ab OK FFB) */
+  wallId?: string;
+  field?: { x0: number; x1: number; z0: number; z1: number };
 }
 
 export interface Room {
@@ -36,22 +73,22 @@ export interface Room {
   covering: string;
   /** Wärmeleitwiderstand des Bodenbelags R_λ,B in m²·K/W */
   rLambdaB: number;
-  /** Verlegeabstand VA in m */
-  spacing: number;
-  pattern: LayingPattern;
+  surfaces: HeatingSurface[];
   /** null = nächstgelegener Verteiler */
   manifoldId: string | null;
-  /** Anschlusspunkt der Heizkreise; null = automatisch (Raumkontur, nächster Punkt zum Verteiler) */
+  /** Verteiler von Hand gewählt – die automatische Verteilung ändert ihn nicht */
+  manifoldLocked?: boolean;
+  /** Anschlusspunkt der Heizkreise; null = automatisch */
   connector: Vec | null;
-  /** Fensterfläche in m² (in Außenwänden) */
+  /** zusätzliche Fensterfläche in m² (zu den gezeichneten Fenstern) */
   windowArea: number;
   /** Außenwandlänge in m; null = aus gezeichneten Außenwänden ermitteln */
   extWallLengthOverride: number | null;
   floorBoundary: FloorBoundary;
   ceilingBoundary: CeilingBoundary;
-  /** Anzahl Heizkreise; null = automatisch aus maximaler Kreislänge */
+  /** Anzahl Heizkreise der Fußbodenfläche; null = automatisch */
   circuitsOverride: number | null;
-  /** Nicht belegte Fläche (Einbauten, Küchenzeile, Dusche) in m² */
+  /** Nicht belegte Bodenfläche (Einbauten, Küchenzeile, Dusche) in m² */
   excludedArea: number;
 }
 
@@ -61,6 +98,8 @@ export interface Manifold {
   pos: Vec;
   /** manuelle Länge Verteiler ↔ Wärmeerzeuger (einfach) in m; null = automatisch */
   supplyLengthOverride: number | null;
+  /** maximale Anzahl Abgänge */
+  maxOutlets: number;
 }
 
 export interface Route {
@@ -68,6 +107,20 @@ export interface Route {
   roomId: string;
   /** Zwischenpunkte zwischen Anschlusspunkt des Raums und Verteiler */
   points: Vec[];
+  /** true = automatisch geführt (wird bei der Auslegung neu berechnet) */
+  auto?: boolean;
+}
+
+/** Deckenöffnung im Fußboden dieses Geschosses (Treppe, Spindeltreppe, Luftraum). */
+export interface FloorVoid {
+  id: string;
+  kind: VoidKind;
+  polygon: Vec[];
+  /** Spindeltreppe */
+  center?: Vec;
+  radius?: number;
+  /** gerade Treppe: Laufrichtung (Antritt → Austritt) */
+  direction?: 'x+' | 'x-' | 'y+' | 'y-';
 }
 
 export interface BackgroundImage {
@@ -81,7 +134,6 @@ export interface BackgroundImage {
   opacity: number;
   visible: boolean;
   locked: boolean;
-  /** true, sobald der Maßstab kalibriert wurde */
   calibrated: boolean;
 }
 
@@ -90,15 +142,18 @@ export interface Floor {
   name: string;
   /** Höhe Oberkante Fertigfußboden über ±0,00 in m */
   elevation: number;
-  /** Geschosshöhe (Rohbau, für Außenwandflächen) in m */
+  /** Geschosshöhe (OK FFB bis OK FFB) in m */
   storeyHeight: number;
-  /** lichte Raumhöhe (für Raumvolumen) in m */
+  /** lichte Raumhöhe in m */
   clearHeight: number;
+  /** Geschoss liegt im Erdreich (Keller) */
+  belowGrade: boolean;
   background: BackgroundImage | null;
   walls: Wall[];
   rooms: Room[];
   manifolds: Manifold[];
   routes: Route[];
+  voids: FloorVoid[];
 }
 
 export interface HeatSource {
@@ -109,32 +164,63 @@ export interface HeatSource {
   type: string;
 }
 
+export interface Layer {
+  /** Schlüssel in MATERIALS */
+  material: string;
+  thickness: number;
+}
+
+export interface Construction {
+  /** Schlüssel der Vorlage oder 'custom' */
+  template: string;
+  layers: Layer[];
+}
+
+export type ConstructionSlot = 'extWall' | 'roof' | 'topSlab' | 'groundSlab' | 'basementSlab' | 'unheatedWall';
+
+export interface Roof {
+  type: RoofType;
+  /** Dachneigung in Grad */
+  pitch: number;
+  /** Firstrichtung */
+  ridge: 'x' | 'y';
+  overhang: number;
+  /** Dämmebene: in der Dachfläche (beheiztes DG) oder auf der obersten Geschossdecke */
+  insulation: 'rafters' | 'topSlab';
+  /** Kniestock (Drempel) über OK FFB des obersten Geschosses */
+  kneeWall: number;
+}
+
 export interface BuildingData {
   client: string;
   address: string;
   planner: string;
   /** Schlüssel in CLIMATE_LOCATIONS oder 'custom' */
   location: string;
-  /** Norm-Außentemperatur θ_e in °C */
   thetaE: number;
-  /** Jahresmittel der Außentemperatur θ_m,e in °C */
   thetaMeanYear: number;
-  /** Schlüssel in BUILDING_STANDARDS */
+  /** Baujahr */
+  yearBuilt: number;
+  /** unter dem untersten gezeichneten Geschoss: Bodenplatte oder unbeheizter Keller */
+  basement: 'none' | 'unheated';
+  /** Schlüssel in BUILDING_STANDARDS oder 'custom' */
   standard: string;
+  constructions: Record<ConstructionSlot, Construction>;
+  /** Schlüssel in WINDOW_TYPES */
+  windowType: string;
   uExtWall: number;
   uWindow: number;
+  uDoor: number;
+  /** Dach (Dämmung in der Dachfläche) */
   uRoof: number;
+  /** oberste Geschossdecke zum unbeheizten Dachraum */
+  uTopSlab: number;
   uGroundFloor: number;
-  /** Decke/Boden gegen unbeheizte Räume */
   uUnheatedSlab: number;
-  /** Wand gegen unbeheizte Räume */
   uUnheatedWall: number;
-  /** Innenwand zwischen beheizten Räumen unterschiedlicher Temperatur */
   uInteriorWall: number;
-  /** Wärmebrückenzuschlag ΔU_WB */
   deltaUTB: number;
   heatRecovery: boolean;
-  /** Wirkungsgrad der Wärmerückgewinnung (0…1) */
   etaHR: number;
   notes: string;
 }
@@ -142,38 +228,42 @@ export interface BuildingData {
 export interface DesignParams {
   /** Schlüssel in PIPES */
   pipe: string;
-  /** maximale Heizkreislänge inkl. Anbindeleitung in m */
   maxCircuitLength: number;
-  /** maximaler Druckverlust je Heizkreis in Pa (Rohrreibung) */
   maxPressureDrop: number;
-  /** Spreizung σ des Auslegungsraums in K */
   sigmaDesign: number;
   /** feste Vorlauftemperatur; null = nach EN 1264-3 ermitteln */
   supplyTempFixed: number | null;
-  /** Schlüssel in SCREEDS */
+  /** Ziel-Vorlauftemperatur für die automatische Auslegung */
+  targetSupply: number;
+  /** zulässige Verlegeabstände in m */
+  allowedSpacings: number[];
+  /** Standardsystem für neue Fußbodenflächen (Schlüssel in HEATING_SYSTEMS) */
+  defaultFloorSystem: string;
   screed: string;
-  /** Wärmeleitfähigkeit des Estrichs λ_E in W/(m·K) */
   lambdaScreed: number;
-  /** Estrichüberdeckung über Rohr s_ü in m */
+  /** Estrichdicke über Rohr s_ü in m (Nasssystem) */
   screedCover: number;
-  /** Dämmdicke unter dem System in m */
+  /** Rohrüberdeckung im Fräs-System in m */
+  milledCover: number;
   insulationThickness: number;
-  /** Wärmeleitfähigkeit der Dämmung in W/(m·K) */
   lambdaInsulation: number;
-  /** Abstand der Rohre zur Wand in m */
   wallDistance: number;
-  /** Rollenlänge für die Materialliste in m */
   rollLength: number;
+  /** maximale Anzahl Abgänge je Verteiler (automatische Verteilung) */
+  maxOutlets: number;
 }
 
 export interface Project {
-  version: 1;
+  version: 2;
   name: string;
   isExample: boolean;
   building: BuildingData;
   design: DesignParams;
+  roof: Roof;
   floors: Floor[];
   heatSource: HeatSource | null;
+  /** Assistent abgeschlossen / aktueller Schritt */
+  wizard: { done: boolean; step: number };
 }
 
 /** Bilder werden getrennt vom Projekt gehalten, damit Undo-Schritte sie nicht kopieren. */

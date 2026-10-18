@@ -59,6 +59,8 @@ export interface RoomType {
   spacing: number;
   covering: string;
   heated: boolean;
+  /** Temperatur-Korrekturfaktor b_u, wenn der Raum unbeheizt an beheizte Räume grenzt */
+  bU?: number;
 }
 
 // θ_int nach DIN/TS 12831-1 (Wohngebäude); n_min nach EN 12831 (Tab. D.5a).
@@ -69,14 +71,18 @@ export const ROOM_TYPES: Record<string, RoomType> = {
   schlafen: { label: 'Schlafzimmer', thetaI: 20, airChange: 0.5, spacing: 0.15, covering: 'parkett_klebe', heated: true },
   kind: { label: 'Kinderzimmer', thetaI: 20, airChange: 0.5, spacing: 0.15, covering: 'parkett_klebe', heated: true },
   buero: { label: 'Arbeitszimmer', thetaI: 20, airChange: 0.5, spacing: 0.15, covering: 'parkett_klebe', heated: true },
-  bad: { label: 'Bad', thetaI: 24, airChange: 1.5, spacing: 0.10, covering: 'fliesen', heated: true },
-  dusche: { label: 'Duschbad', thetaI: 24, airChange: 1.5, spacing: 0.10, covering: 'fliesen', heated: true },
-  wc: { label: 'WC', thetaI: 20, airChange: 1.5, spacing: 0.10, covering: 'fliesen', heated: true },
-  flur: { label: 'Flur / Diele', thetaI: 15, airChange: 0.5, spacing: 0.20, covering: 'fliesen', heated: true },
-  treppe: { label: 'Treppenraum', thetaI: 15, airChange: 0.5, spacing: 0.20, covering: 'fliesen', heated: true },
-  hwr: { label: 'Hauswirtschaftsraum', thetaI: 15, airChange: 0.5, spacing: 0.20, covering: 'fliesen', heated: true },
-  abstell: { label: 'Abstellraum', thetaI: 15, airChange: 0.5, spacing: 0.25, covering: 'fliesen', heated: false },
-  technik: { label: 'Technikraum', thetaI: 15, airChange: 0.5, spacing: 0.25, covering: 'none', heated: false },
+  bad: { label: 'Bad', thetaI: 24, airChange: 1.5, spacing: 0.1, covering: 'fliesen', heated: true },
+  dusche: { label: 'Duschbad', thetaI: 24, airChange: 1.5, spacing: 0.1, covering: 'fliesen', heated: true },
+  wc: { label: 'WC', thetaI: 20, airChange: 1.5, spacing: 0.1, covering: 'fliesen', heated: true },
+  flur: { label: 'Flur / Diele', thetaI: 15, airChange: 0.5, spacing: 0.2, covering: 'fliesen', heated: true },
+  treppe: { label: 'Treppenraum', thetaI: 15, airChange: 0.5, spacing: 0.2, covering: 'fliesen', heated: true },
+  hwr: { label: 'Hauswirtschaftsraum', thetaI: 15, airChange: 0.5, spacing: 0.2, covering: 'fliesen', heated: true },
+  abstell: { label: 'Abstellraum', thetaI: 15, airChange: 0.5, spacing: 0.2, covering: 'fliesen', heated: false, bU: 0.3 },
+  technik: { label: 'Technikraum', thetaI: 15, airChange: 0.5, spacing: 0.2, covering: 'none', heated: false, bU: 0.3 },
+  garage: { label: 'Garage (im Haus)', thetaI: 5, airChange: 0, spacing: 0.2, covering: 'none', heated: false, bU: 0.8 },
+  keller: { label: 'Keller unbeheizt', thetaI: 10, airChange: 0, spacing: 0.2, covering: 'none', heated: false, bU: 0.5 },
+  dachboden: { label: 'Dachboden unbeheizt', thetaI: 0, airChange: 0, spacing: 0.2, covering: 'none', heated: false, bU: 0.9 },
+  galerie: { label: 'Galerie / Luftraum', thetaI: 20, airChange: 0.5, spacing: 0.15, covering: 'parkett_klebe', heated: true },
   sonstiges: { label: 'Sonstiger Raum', thetaI: 20, airChange: 0.5, spacing: 0.15, covering: 'fliesen', heated: true },
 };
 
@@ -108,7 +114,12 @@ export interface Pipe {
   maxLength: number;
 }
 
+/** Mindestbiegeradius (kalt gebogen) als Vielfaches des Außendurchmessers */
+export const BEND_RADIUS_FACTOR = 5;
+
 export const PIPES: Record<string, Pipe> = {
+  '10x1.3': { label: 'PE-RT 10 × 1,3 (Wand/Decke)', outer: 0.01, inner: 0.0074, maxLength: 60 },
+  '12x1.5': { label: 'PE-RT 12 × 1,5 (Fräs-/Dünnschicht)', outer: 0.012, inner: 0.009, maxLength: 80 },
   '14x2': { label: 'PE-Xa / PE-RT 14 × 2,0', outer: 0.014, inner: 0.010, maxLength: 80 },
   '16x2': { label: 'PE-Xa / PE-RT 16 × 2,0', outer: 0.016, inner: 0.012, maxLength: 100 },
   '17x2': { label: 'PE-Xa / PE-RT 17 × 2,0', outer: 0.017, inner: 0.013, maxLength: 120 },
@@ -174,13 +185,18 @@ export const WALL_PRESETS: { kind: 'exterior' | 'interior' | 'unheated'; thickne
   { kind: 'unheated', thickness: 0.24, label: 'Wand zu unbeheizt 24 cm' },
 ];
 
-export const SPACINGS = [0.05, 0.075, 0.10, 0.125, 0.15, 0.20, 0.25, 0.30];
+/** alle wählbaren Verlegeabstände in m */
+export const SPACINGS = [0.05, 0.075, 0.1, 0.125, 0.15, 0.175, 0.2, 0.25, 0.3];
+/** Standard der automatischen Auslegung */
+export const DEFAULT_ALLOWED_SPACINGS = [0.075, 0.1, 0.125, 0.15, 0.175, 0.2];
 
-/** Grenzwerte der Fußbodenoberflächentemperatur nach EN 1264-2 */
+/** Grenzwerte der Oberflächentemperatur: Fußboden nach EN 1264-2, Wand und Decke als Behaglichkeits-Richtwerte */
 export const SURFACE_LIMITS = {
   occupied: 29,
   bathroom: 33,
   edge: 35,
+  wall: 35,
+  ceiling: 30,
 };
 
 export const BATHROOM_TYPES = new Set(['bad', 'dusche']);

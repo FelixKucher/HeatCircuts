@@ -1,6 +1,6 @@
 import type { Floor, ImageStore, Project } from '../model/types';
 import type { DesignResult } from '../calc/design';
-import { backgroundMarkup, floorBounds, renderLayers } from '../ui/render';
+import { backgroundMarkup, floorBounds, renderLayers, SVG_DEFS } from '../ui/render';
 import { esc, level, num } from '../ui/format';
 
 // Feste Farben für den Plan-Export (unabhängig vom Bildschirmthema)
@@ -26,6 +26,9 @@ const EXPORT_CSS = `
 text{font-family:Barlow,"Helvetica Neue",Arial,sans-serif;text-anchor:middle;fill:#1d2a35}
 .lbl-title{font-weight:600}.lbl{fill:#45525d}.lbl-warn{fill:#b4361f}.lbl-muted{fill:#8a9399}.lbl-feeder{fill:#6b2f9e}
 .title-block text{text-anchor:start}
+.opening-cut{fill:#fff;stroke:none}.window-line{stroke:#1d2a35;stroke-width:.015}.door-leaf{stroke:#1d2a35;stroke-width:.025}.door-arc{fill:none;stroke:#8a9399;stroke-width:.012;stroke-dasharray:.05 .04}.garage-line{stroke:#1d2a35;stroke-width:.03;stroke-dasharray:.15 .08}
+.void{fill:#f1f1ef;stroke:#45525d;stroke-width:.02}.stair-line{stroke:#45525d;stroke-width:.012}.stair-arrow{fill:none;stroke:#1d2a35;stroke-width:.02}.stair-post{fill:#45525d}.void-cross{stroke:#8a9399;stroke-width:.012}
+.elmat-line{stroke:#e08a3a}.elmat{opacity:.6}.ceil-dot{fill:#e0a060}.wall-heat{stroke:#c8372d;stroke-width:.08;stroke-dasharray:.12 .05}
 `;
 
 export function exportFloorSvg(project: Project, floor: Floor, design: DesignResult, images: ImageStore, withBackground: boolean): string | null {
@@ -47,9 +50,10 @@ export function exportFloorSvg(project: Project, floor: Floor, design: DesignRes
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="${minX} ${minY} ${w} ${h}" width="${Math.round(w * scale)}" height="${Math.round(h * scale)}">
 <style>${EXPORT_CSS}</style>
+${SVG_DEFS}
 <rect x="${minX}" y="${minY}" width="${w}" height="${h}" fill="#ffffff"/>
 ${withBackground ? backgroundMarkup(floor, images) : ''}
-<g>${L.rooms}${L.circuits}${L.feeders}${L.walls}${L.objects}${L.labels}</g>
+<g>${L.rooms}${L.voids}${L.circuits}${L.feeders}${L.walls}${L.openings}${L.objects}${L.labels}</g>
 ${title}
 </svg>`;
 }

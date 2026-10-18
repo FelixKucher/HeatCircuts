@@ -9,6 +9,7 @@ export default defineConfig(({ mode }) => ({
   build: {
     outDir: mode === 'single' ? 'dist-single' : 'dist',
     target: 'es2022',
+    chunkSizeWarningLimit: 1200,
   },
   test: {
     include: ['tests/**/*.test.ts'],

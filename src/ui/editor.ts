@@ -1,13 +1,29 @@
-import type { Floor, Room, Vec } from '../model/types';
+import type { Floor, OpeningKind, Room, Vec } from '../model/types';
 import type { Store } from '../model/store';
 import { WALL_PRESETS } from '../model/catalog';
 import { floorShort, newRoom, newWall, uid } from '../model/factory';
-import { add, dist, len, mul, norm, orthoSnap, pointInPolygon, snapToGrid, sub, v, area, isSimplePolygon, cleanPolygon } from '../geometry/geom';
+import { add, dist, len, mul, norm, orthoSnap, pointInPolygon, snapToGrid, sub, v, area, isSimplePolygon, cleanPolygon, closestPointOnSegment, distToSegment, dot } from '../geometry/geom';
 import { detectRoom } from '../geometry/detect';
-import { backgroundMarkup, floorBounds, renderLayers } from './render';
+import { backgroundMarkup, floorBounds, renderLayers, SVG_DEFS } from './render';
 import { esc, num, parseNum } from './format';
 
-export type Tool = 'select' | 'pan' | 'wall' | 'room' | 'rect' | 'detect' | 'manifold' | 'heatSource' | 'route' | 'calibrate' | 'moveImage' | 'measure';
+export type Tool =
+  | 'select'
+  | 'pan'
+  | 'wall'
+  | 'room'
+  | 'rect'
+  | 'detect'
+  | 'opening'
+  | 'stair'
+  | 'spiral'
+  | 'void'
+  | 'manifold'
+  | 'heatSource'
+  | 'route'
+  | 'calibrate'
+  | 'moveImage'
+  | 'measure';
 
 export interface EditorOptions {
   grid: boolean;
@@ -19,7 +35,18 @@ export interface EditorOptions {
   ghost: boolean;
   wallPreset: number;
   roomType: string;
+  openingKind: OpeningKind;
+  openingWidth: number;
+  openingHeight: number;
+  openingSill: number;
 }
+
+export const OPENING_DEFAULTS: Record<OpeningKind, { width: number; height: number; sill: number; label: string }> = {
+  window: { width: 1.26, height: 1.385, sill: 0.9, label: 'Fenster' },
+  door: { width: 0.885, height: 2.01, sill: 0, label: 'Innentür' },
+  entrance: { width: 1.135, height: 2.135, sill: 0, label: 'Haustür / Außentür' },
+  garage: { width: 2.5, height: 2.125, sill: 0, label: 'Garagentor' },
+};
 
 export interface EditorCallbacks {
   status(cursor: Vec | null): void;
@@ -27,28 +54,37 @@ export interface EditorCallbacks {
   toast(text: string, kind?: 'info' | 'warn'): void;
   calibrate(measured: number, a: Vec, b: Vec): void;
   toolChanged(tool: Tool): void;
+  manifoldPlaced(): void;
+  openWallView(wallId: string, roomId: string | null): void;
 }
 
 type Drag =
   | { type: 'pan'; sx: number; sy: number; tx: number; ty: number }
   | { type: 'vertex'; roomId: string; index: number }
+  | { type: 'voidVertex'; voidId: string; index: number }
   | { type: 'connector'; roomId: string }
   | { type: 'routePoint'; routeId: string; index: number }
   | { type: 'wallEnd'; wallId: string; end: 'a' | 'b'; joined: { id: string; end: 'a' | 'b' }[] }
-  | { type: 'move'; kind: 'room' | 'wall' | 'manifold' | 'heatSource'; id: string; last: Vec }
+  | { type: 'move'; kind: 'room' | 'wall' | 'manifold' | 'heatSource' | 'void'; id: string; last: Vec }
+  | { type: 'opening'; wallId: string; openingId: string }
   | { type: 'image'; last: Vec }
-  | { type: 'rect'; start: Vec };
+  | { type: 'rect'; start: Vec; mode: 'room' | 'stair' | 'void' }
+  | { type: 'spiral'; center: Vec };
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 
 export const TOOL_HINTS: Record<Tool, string> = {
-  select: 'Objekt anklicken zum Bearbeiten · Eckpunkte ziehen · Mittelpunkte ziehen fügt Ecken ein · leere Fläche ziehen verschiebt die Ansicht',
+  select: 'Objekt anklicken zum Bearbeiten · Eckpunkte ziehen · Mittelpunkte ziehen fügt Ecken ein · Doppelklick auf eine Wand öffnet die Wandansicht',
   pan: 'Ziehen verschiebt die Ansicht · Mausrad zoomt',
   wall: 'Klick setzt Wandpunkte entlang der Wandachse · Länge eintippen + Enter · Shift hebt Ortho auf · Esc/Doppelklick beendet',
   room: 'Eckpunkte anklicken · ersten Punkt anklicken, Enter oder Doppelklick schließt den Raum · Länge eintippen + Enter',
   rect: 'Rechteck aufziehen: Ecke zu Ecke',
-  detect: 'In einen von Wänden umschlossenen Bereich klicken – der Raum wird an der Wandinnenkante erkannt (Türöffnungen mit Wänden schließen)',
-  manifold: 'Klick platziert einen Heizkreisverteiler',
+  detect: 'In einen von Wänden umschlossenen Bereich klicken – der Raum wird an der Wandinnenkante erkannt',
+  opening: 'Auf eine Wand klicken, um die Öffnung zu setzen · Art und Maße oben wählen · Öffnungen lassen sich entlang der Wand verschieben',
+  stair: 'Treppenloch im Fußboden dieses Geschosses aufziehen (Treppe vom Geschoss darunter) · Laufrichtung = längere Seite',
+  spiral: 'Mittelpunkt der Spindeltreppe klicken und Radius aufziehen',
+  void: 'Luftraum / Galerie-Öffnung im Fußboden aufziehen',
+  manifold: 'Klick platziert einen Heizkreisverteiler – danach werden die Heizkreise automatisch verteilt',
   heatSource: 'Klick platziert den Wärmeerzeuger (einer je Projekt)',
   route: 'Raum anklicken, dann Wegpunkte der Anbindeleitung setzen · Klick auf den Verteiler oder Enter beendet',
   calibrate: 'Zwei Punkte mit bekanntem Abstand im Grundriss anklicken (z. B. Maßkette) – danach den echten Abstand eingeben',
@@ -72,6 +108,10 @@ export class Editor {
     ghost: true,
     wallPreset: 0,
     roomType: 'wohnen',
+    openingKind: 'window',
+    openingWidth: OPENING_DEFAULTS.window.width,
+    openingHeight: OPENING_DEFAULTS.window.height,
+    openingSill: OPENING_DEFAULTS.window.sill,
   };
   private draft: Vec[] = [];
   private draftRoomId: string | null = null;
@@ -94,8 +134,9 @@ export class Editor {
     this.svg.setAttribute('class', 'plan');
     this.svg.setAttribute('role', 'application');
     this.svg.setAttribute('aria-label', 'Zeichenfläche');
+    this.svg.innerHTML = SVG_DEFS;
     this.world = document.createElementNS(SVGNS, 'g');
-    for (const name of ['bg', 'grid', 'ghost', 'rooms', 'circuits', 'feeders', 'walls', 'objects', 'labels', 'handles', 'preview']) {
+    for (const name of ['bg', 'grid', 'ghost', 'rooms', 'voids', 'circuits', 'feeders', 'walls', 'openings', 'objects', 'labels', 'handles', 'preview']) {
       const el = document.createElementNS(SVGNS, 'g');
       el.setAttribute('class', `layer-${name}`);
       this.g[name] = el;
@@ -107,7 +148,6 @@ export class Editor {
     new ResizeObserver(() => this.requestRender()).observe(container);
   }
 
-  // ---------- Koordinaten ----------
   toWorld(clientX: number, clientY: number): Vec {
     const r = this.svg.getBoundingClientRect();
     return v((clientX - r.left - this.view.tx) / this.view.scale, (clientY - r.top - this.view.ty) / this.view.scale);
@@ -126,12 +166,20 @@ export class Editor {
     this.requestRender();
   }
 
+  setOpeningKind(k: OpeningKind): void {
+    const d = OPENING_DEFAULTS[k];
+    this.options.openingKind = k;
+    this.options.openingWidth = d.width;
+    this.options.openingHeight = d.height;
+    this.options.openingSill = d.sill;
+  }
+
   cancelDraft(): boolean {
-    const had = this.draft.length > 0 || this.typed !== '' || this.drag?.type === 'rect';
+    const had = this.draft.length > 0 || this.typed !== '' || this.drag?.type === 'rect' || this.drag?.type === 'spiral';
     this.draft = [];
     this.draftRoomId = null;
     this.typed = '';
-    if (this.drag?.type === 'rect') this.drag = null;
+    if (this.drag?.type === 'rect' || this.drag?.type === 'spiral') this.drag = null;
     this.renderPreview();
     return had;
   }
@@ -172,6 +220,7 @@ export class Editor {
     floor.walls.forEach((w) => c.push(w.a, w.b));
     floor.rooms.forEach((r) => c.push(...r.polygon));
     floor.manifolds.forEach((m) => c.push(m.pos));
+    floor.voids.forEach((vd) => vd.kind !== 'spiral' && c.push(...vd.polygon));
     return c;
   }
 
@@ -210,6 +259,21 @@ export class Editor {
     return p;
   }
 
+  /** nächste Wand und Lage entlang der Achse */
+  private nearestWall(p: Vec, tol: number): { wallId: string; t: number } | null {
+    let best: { wallId: string; t: number } | null = null;
+    let bd = tol;
+    for (const w of this.store.floor.walls) {
+      const d = distToSegment(p, w.a, w.b) - w.thickness / 2;
+      if (d < bd) {
+        bd = d;
+        const c = closestPointOnSegment(p, w.a, w.b);
+        best = { wallId: w.id, t: dist(w.a, c) };
+      }
+    }
+    return best;
+  }
+
   // ---------- Ereignisse ----------
   private bind(): void {
     const s = this.svg;
@@ -224,6 +288,18 @@ export class Editor {
     });
     s.addEventListener('dblclick', (e) => {
       e.preventDefault();
+      if (this.tool === 'select') {
+        const t = (e.target as Element).closest('[data-kind]') as SVGElement | null;
+        const ds = t?.dataset;
+        if (ds?.kind === 'wall' && ds.id) return this.cb.openWallView(ds.id, null);
+        if (ds?.kind === 'wallheat' && ds.id) {
+          const [roomId, surfId] = ds.id.split('|');
+          const room = this.store.floor.rooms.find((r) => r.id === roomId);
+          const surf = room?.surfaces.find((x) => x.id === surfId);
+          if (surf?.wallId) return this.cb.openWallView(surf.wallId, roomId);
+        }
+        return;
+      }
       this.confirm();
     });
     s.addEventListener('contextmenu', (e) => {
@@ -265,9 +341,10 @@ export class Editor {
       this.drag = { type: 'pan', sx: e.clientX, sy: e.clientY, tx: this.view.tx, ty: this.view.ty };
       return;
     }
-    const target = (e.target as Element).closest('[data-handle],[data-kind]') as HTMLElement | SVGElement | null;
-    const ds = (target as SVGElement | null)?.dataset;
+    const target = (e.target as Element).closest('[data-handle],[data-kind]') as SVGElement | null;
+    const ds = target?.dataset;
     const last = this.draft.length ? this.draft[this.draft.length - 1] : null;
+    const fid = store.activeFloorId;
 
     switch (this.tool) {
       case 'select': {
@@ -275,6 +352,7 @@ export class Editor {
           const sel = store.selection;
           store.beginLive();
           if (ds.handle === 'vertex' && sel?.kind === 'room') this.drag = { type: 'vertex', roomId: sel.id, index: Number(ds.index) };
+          else if (ds.handle === 'void-vertex' && sel?.kind === 'void') this.drag = { type: 'voidVertex', voidId: sel.id, index: Number(ds.index) };
           else if (ds.handle === 'mid' && sel?.kind === 'room') {
             const idx = Number(ds.index);
             store.live((pr) => {
@@ -304,7 +382,18 @@ export class Editor {
           return;
         }
         if (ds?.kind && ds.id) {
-          const kind = ds.kind as 'room' | 'wall' | 'manifold' | 'heatSource' | 'route';
+          if (ds.kind === 'opening') {
+            const [wallId, openingId] = ds.id.split('|');
+            store.select({ kind: 'opening', id: ds.id });
+            store.beginLive();
+            this.drag = { type: 'opening', wallId, openingId };
+            return;
+          }
+          if (ds.kind === 'wallheat') {
+            store.select({ kind: 'room', id: ds.id.split('|')[0] });
+            return;
+          }
+          const kind = ds.kind as 'room' | 'wall' | 'manifold' | 'heatSource' | 'route' | 'void';
           store.select({ kind, id: ds.id });
           if (kind !== 'route') {
             store.beginLive();
@@ -318,11 +407,9 @@ export class Editor {
       }
       case 'wall': {
         const q = this.snap(p, last);
-        if (!last) {
-          this.draft = [q];
-        } else if (dist(q, last) > 0.02) {
+        if (!last) this.draft = [q];
+        else if (dist(q, last) > 0.02) {
           this.addWall(last, q);
-          // Kette schließt sich am Startpunkt
           if (this.draft.length > 1 && dist(q, this.draft[0]) < 1e-6) this.draft = [];
           else this.draft.push(q);
         }
@@ -341,8 +428,32 @@ export class Editor {
         this.renderPreview();
         return;
       }
-      case 'rect': {
-        this.drag = { type: 'rect', start: this.snap(p, null) };
+      case 'rect':
+      case 'stair':
+      case 'void':
+        this.drag = { type: 'rect', start: this.snap(p, null), mode: this.tool === 'rect' ? 'room' : this.tool };
+        return;
+      case 'spiral':
+        this.drag = { type: 'spiral', center: this.snap(p, null) };
+        return;
+      case 'opening': {
+        const hit = this.nearestWall(p, this.px(14));
+        if (!hit) {
+          this.cb.toast('Klicken Sie auf eine Wand, um die Öffnung zu setzen.', 'warn');
+          return;
+        }
+        const w = floor.walls.find((x) => x.id === hit.wallId)!;
+        const L = dist(w.a, w.b);
+        const width = Math.min(this.options.openingWidth, L - 0.1);
+        let t = Math.min(L - width / 2 - 0.05, Math.max(width / 2 + 0.05, hit.t));
+        if (this.options.grid) t = Math.round(t / this.options.gridStep) * this.options.gridStep;
+        const id = uid('o');
+        const kind = this.options.openingKind;
+        store.commit((pr) => {
+          const wall = pr.floors.find((x) => x.id === fid)!.walls.find((x) => x.id === w.id)!;
+          wall.openings.push({ id, kind, offset: t, width, height: this.options.openingHeight, sill: this.options.openingSill });
+        });
+        store.select({ kind: 'opening', id: `${w.id}|${id}` });
         return;
       }
       case 'detect': {
@@ -353,7 +464,7 @@ export class Editor {
               ? 'Zeichnen Sie zuerst Wände – oder legen Sie den Raum mit dem Polygon-Werkzeug an.'
               : res.reason === 'in-wall'
                 ? 'Der Klick liegt in einer Wand. Klicken Sie in die Raumfläche.'
-                : 'Der Bereich ist nicht geschlossen. Schließen Sie Türöffnungen und Lücken mit Wänden.',
+                : 'Der Bereich ist nicht geschlossen. Schließen Sie Lücken mit Wänden (Türen als Öffnung in durchgehenden Wänden).',
             'warn',
           );
           return;
@@ -364,7 +475,7 @@ export class Editor {
         }
         let id = '';
         store.commit((pr) => {
-          const fl = pr.floors.find((x) => x.id === floor.id)!;
+          const fl = pr.floors.find((x) => x.id === fid)!;
           const room = newRoom(pr, fl, res.polygon, this.options.roomType);
           id = room.id;
           fl.rooms.push(room);
@@ -376,20 +487,19 @@ export class Editor {
         const q = this.snap(p, null);
         const id = uid('m');
         store.commit((pr) => {
-          const fl = pr.floors.find((x) => x.id === floor.id)!;
+          const fl = pr.floors.find((x) => x.id === fid)!;
           const n = fl.manifolds.length + 1;
-          fl.manifolds.push({ id, name: `HKV ${floorShort(fl.name)}${n > 1 ? ` ${n}` : ''}`, pos: q, supplyLengthOverride: null });
+          fl.manifolds.push({ id, name: `HKV ${floorShort(fl.name)}${n > 1 ? ` ${n}` : ''}`, pos: q, supplyLengthOverride: null, maxOutlets: pr.design.maxOutlets });
         });
         this.setTool('select');
         store.select({ kind: 'manifold', id });
+        this.cb.manifoldPlaced();
         return;
       }
       case 'heatSource': {
         const q = this.snap(p, null);
         store.commit((pr) => {
-          pr.heatSource = pr.heatSource
-            ? { ...pr.heatSource, floorId: floor.id, pos: q }
-            : { floorId: floor.id, pos: q, name: 'Wärmeerzeuger', type: 'wp_luft' };
+          pr.heatSource = pr.heatSource ? { ...pr.heatSource, floorId: fid, pos: q } : { floorId: fid, pos: q, name: 'Wärmeerzeuger', type: 'wp_luft' };
         });
         this.setTool('select');
         store.select({ kind: 'heatSource', id: 'hs' });
@@ -429,8 +539,8 @@ export class Editor {
           this.cb.toast('Laden Sie zuerst ein Grundrissbild für dieses Geschoss.', 'warn');
           return;
         }
-        const q = this.draft.length ? this.snap(p, this.draft[0]) : p;
-        this.draft.push(this.draft.length ? q : p);
+        const q = this.draft.length ? this.snap(p, this.draft[0], this.options.ortho ? 'full' : 'none') : p;
+        this.draft.push(q);
         if (this.draft.length === 2) {
           const [a, b] = this.draft;
           const d = dist(a, b);
@@ -472,6 +582,7 @@ export class Editor {
     this.cb.status(p);
     const d = this.drag;
     const store = this.store;
+    const fid = store.activeFloorId;
     if (!d) {
       this.renderPreview();
       return;
@@ -490,6 +601,14 @@ export class Editor {
         });
         return;
       }
+      case 'voidVertex': {
+        const q = this.snap(p, null);
+        store.live((pr) => {
+          const vd = pr.floors.find((x) => x.id === fid)?.voids.find((x) => x.id === d.voidId);
+          if (vd) vd.polygon[d.index] = q;
+        });
+        return;
+      }
       case 'connector': {
         const q = this.snap(p, null);
         store.live((pr) => {
@@ -501,9 +620,23 @@ export class Editor {
       case 'routePoint': {
         const q = this.snap(p, null);
         store.live((pr) => {
-          const fl = pr.floors.find((x) => x.id === store.activeFloorId);
-          const r = fl?.routes.find((x) => x.id === d.routeId);
-          if (r) r.points[d.index] = q;
+          const r = pr.floors.find((x) => x.id === fid)?.routes.find((x) => x.id === d.routeId);
+          if (r) {
+            r.points[d.index] = q;
+            r.auto = false;
+          }
+        });
+        return;
+      }
+      case 'opening': {
+        store.live((pr) => {
+          const w = pr.floors.find((x) => x.id === fid)?.walls.find((x) => x.id === d.wallId);
+          const o = w?.openings.find((x) => x.id === d.openingId);
+          if (!w || !o) return;
+          const L = dist(w.a, w.b);
+          let t = dot(sub(p, w.a), norm(sub(w.b, w.a)));
+          if (this.options.grid) t = Math.round(t / this.options.gridStep) * this.options.gridStep;
+          o.offset = Math.min(L - o.width / 2, Math.max(o.width / 2, t));
         });
         return;
       }
@@ -512,7 +645,7 @@ export class Editor {
         const other = w0 ? (d.end === 'a' ? w0.b : w0.a) : null;
         const q = this.snapExcludingWall(p, other, d.wallId);
         store.live((pr) => {
-          const fl = pr.floors.find((x) => x.id === store.activeFloorId)!;
+          const fl = pr.floors.find((x) => x.id === fid)!;
           const w = fl.walls.find((x) => x.id === d.wallId);
           if (w) w[d.end] = q;
           for (const j of d.joined) {
@@ -528,7 +661,7 @@ export class Editor {
         if (Math.abs(delta.x) < 1e-9 && Math.abs(delta.y) < 1e-9) return;
         d.last = add(d.last, delta);
         store.live((pr) => {
-          const fl = pr.floors.find((x) => x.id === store.activeFloorId)!;
+          const fl = pr.floors.find((x) => x.id === fid)!;
           if (d.kind === 'room') {
             const room = fl.rooms.find((x) => x.id === d.id);
             if (room) {
@@ -541,6 +674,12 @@ export class Editor {
               w.a = add(w.a, delta);
               w.b = add(w.b, delta);
             }
+          } else if (d.kind === 'void') {
+            const vd = fl.voids.find((x) => x.id === d.id);
+            if (vd) {
+              vd.polygon = vd.polygon.map((q) => add(q, delta));
+              if (vd.center) vd.center = add(vd.center, delta);
+            }
           } else if (d.kind === 'manifold') {
             const m = fl.manifolds.find((x) => x.id === d.id);
             if (m) m.pos = add(m.pos, delta);
@@ -552,12 +691,13 @@ export class Editor {
         const delta = sub(p, d.last);
         d.last = p;
         store.live((pr) => {
-          const fl = pr.floors.find((x) => x.id === store.activeFloorId)!;
+          const fl = pr.floors.find((x) => x.id === fid)!;
           if (fl.background) fl.background.offset = add(fl.background.offset, delta);
         });
         return;
       }
       case 'rect':
+      case 'spiral':
         this.renderPreview();
         return;
     }
@@ -565,14 +705,34 @@ export class Editor {
 
   private onUp(e: PointerEvent): void {
     const d = this.drag;
+    const fid = this.store.activeFloorId;
     if (d?.type === 'rect') {
       const a = d.start;
       const b = this.snap(this.toWorld(e.clientX, e.clientY), null);
       this.drag = null;
       if (Math.abs(b.x - a.x) > 0.3 && Math.abs(b.y - a.y) > 0.3) {
         const poly = [a, v(b.x, a.y), b, v(a.x, b.y)];
-        this.createRoom(poly);
+        if (d.mode === 'room') this.createRoom(poly);
+        else {
+          const id = uid('v');
+          const alongY = Math.abs(b.y - a.y) >= Math.abs(b.x - a.x);
+          this.store.commit((pr) => {
+            pr.floors.find((x) => x.id === fid)!.voids.push({ id, kind: d.mode === 'stair' ? 'stair' : 'void', polygon: poly, direction: alongY ? (b.y > a.y ? 'y+' : 'y-') : b.x > a.x ? 'x+' : 'x-' });
+          });
+          this.store.select({ kind: 'void', id });
+        }
       }
+      this.renderPreview();
+      return;
+    }
+    if (d?.type === 'spiral') {
+      this.drag = null;
+      const c = d.center;
+      const r = Math.max(0.6, dist(c, this.toWorld(e.clientX, e.clientY)));
+      const id = uid('v');
+      const poly = Array.from({ length: 24 }, (_, k) => add(c, v(Math.cos((k / 24) * Math.PI * 2) * r, Math.sin((k / 24) * Math.PI * 2) * r)));
+      this.store.commit((pr) => pr.floors.find((x) => x.id === fid)!.voids.push({ id, kind: 'spiral', polygon: poly, center: c, radius: Math.round(r * 100) / 100 }));
+      this.store.select({ kind: 'void', id });
       this.renderPreview();
       return;
     }
@@ -608,7 +768,6 @@ export class Editor {
   }
 
   // ---------- Bestätigen / Tastatur ----------
-  /** Enter / Doppelklick: aktuelle Zeichnung abschließen. */
   confirm(): boolean {
     if (this.typed && this.draft.length && (this.tool === 'wall' || this.tool === 'room')) {
       const l = parseNum(this.typed);
@@ -703,7 +862,7 @@ export class Editor {
     this.store.commit((pr) => {
       const fl = pr.floors.find((x) => x.id === fid)!;
       fl.routes = fl.routes.filter((r) => r.roomId !== roomId);
-      if (pts.length) fl.routes.push({ id: uid('l'), roomId, points: pts });
+      if (pts.length) fl.routes.push({ id: uid('l'), roomId, points: pts, auto: false });
     });
     this.cb.toast(pts.length ? 'Anbindeleitung gespeichert.' : 'Anbindeleitung zurückgesetzt – sie wird wieder automatisch geführt.');
     this.renderPreview();
@@ -741,15 +900,8 @@ export class Editor {
       showLabels: this.options.showLabels,
       ghost,
     });
-    this.g.ghost.innerHTML = L.ghost;
-    this.g.rooms.innerHTML = L.rooms;
-    this.g.circuits.innerHTML = L.circuits;
-    this.g.feeders.innerHTML = L.feeders;
-    this.g.walls.innerHTML = L.walls;
-    this.g.objects.innerHTML = L.objects;
-    this.g.labels.innerHTML = L.labels;
+    for (const k of ['ghost', 'rooms', 'voids', 'circuits', 'feeders', 'walls', 'openings', 'objects', 'labels', 'handles'] as const) this.g[k].innerHTML = L[k];
     this.g.labels.setAttribute('stroke-width', String(3 / scale));
-    this.g.handles.innerHTML = L.handles;
     this.renderPreview();
   }
 
@@ -763,8 +915,7 @@ export class Editor {
     const major = s < 12 ? 10 : s < 30 ? 5 : 1;
     const minor = s > 90 ? 0.1 : s > 45 ? 0.5 : 0;
     let h = '';
-    const line = (xa: number, ya: number, xb: number, yb: number, cls: string) =>
-      `<line x1="${xa}" y1="${ya}" x2="${xb}" y2="${yb}" class="${cls}"/>`;
+    const line = (xa: number, ya: number, xb: number, yb: number, cls: string) => `<line x1="${xa}" y1="${ya}" x2="${xb}" y2="${yb}" class="${cls}"/>`;
     if (minor) {
       for (let x = Math.ceil(x0 / minor) * minor; x <= x1; x += minor) if (Math.abs(x / major - Math.round(x / major)) > 1e-6) h += line(x, y0, x, y1, 'grid-minor');
       for (let y = Math.ceil(y0 / minor) * minor; y <= y1; y += minor) if (Math.abs(y / major - Math.round(y / major)) > 1e-6) h += line(x0, y, x1, y, 'grid-minor');
@@ -794,10 +945,8 @@ export class Editor {
           h += tag(q, this.typed ? `${this.typed} m ↵` : `${num(dist(last, q), 2)} m`);
         }
       } else if (this.tool === 'route') {
-        if (c) {
-          const q = this.snap(c, last);
-          h += `<polyline points="${ptsArr} ${f(q.x)},${f(q.y)}" class="draft-route"/>`;
-        } else h += `<polyline points="${ptsArr}" class="draft-route"/>`;
+        const q = c ? this.snap(c, last) : null;
+        h += `<polyline points="${ptsArr}${q ? ` ${f(q.x)},${f(q.y)}` : ''}" class="draft-route"/>`;
       } else {
         const q = c ? (this.tool === 'calibrate' ? c : this.snap(c, last)) : null;
         h += `<polyline points="${ptsArr}${q ? ` ${f(q.x)},${f(q.y)}` : ''}" class="draft-line"/>`;
@@ -812,13 +961,29 @@ export class Editor {
       h += `<rect x="${f(Math.min(a.x, b.x))}" y="${f(Math.min(a.y, b.y))}" width="${f(Math.abs(b.x - a.x))}" height="${f(Math.abs(b.y - a.y))}" class="draft-fill draft-line"/>`;
       h += tag(b, `${num(Math.abs(b.x - a.x), 2)} × ${num(Math.abs(b.y - a.y), 2)} m`);
     }
+    if (this.drag?.type === 'spiral' && c) {
+      const r = Math.max(0.6, dist(this.drag.center, c));
+      h += `<circle cx="${f(this.drag.center.x)}" cy="${f(this.drag.center.y)}" r="${f(r)}" class="draft-fill draft-line"/>`;
+      h += tag(c, `Ø ${num(2 * r, 2)} m`);
+    }
+    if (this.tool === 'opening' && c && !this.drag) {
+      const hit = this.nearestWall(c, this.px(14));
+      if (hit) {
+        const w = this.store.floor.walls.find((x) => x.id === hit.wallId)!;
+        const dir = norm(sub(w.b, w.a));
+        const wd = this.options.openingWidth;
+        const a = add(w.a, mul(dir, hit.t - wd / 2));
+        const b = add(w.a, mul(dir, hit.t + wd / 2));
+        h += `<line x1="${f(a.x)}" y1="${f(a.y)}" x2="${f(b.x)}" y2="${f(b.y)}" stroke-width="${f(w.thickness + 0.06)}" class="draft-wall"/>`;
+        h += tag(c, `${OPENING_DEFAULTS[this.options.openingKind].label} ${num(wd, 3)} m`);
+      }
+    }
     if (this.measureResult) {
       const [a, b] = this.measureResult;
       h += `<line x1="${f(a.x)}" y1="${f(a.y)}" x2="${f(b.x)}" y2="${f(b.y)}" class="measure"/>`;
       h += tag(b, `${num(dist(a, b), 3)} m`);
     }
-    // Fangsymbol
-    const drawingTools: Tool[] = ['wall', 'room', 'rect', 'manifold', 'heatSource', 'route', 'measure'];
+    const drawingTools: Tool[] = ['wall', 'room', 'rect', 'manifold', 'heatSource', 'route', 'measure', 'stair', 'void', 'spiral'];
     if (c && drawingTools.includes(this.tool) && !this.drag) {
       const last = this.draft.length ? this.draft[this.draft.length - 1] : null;
       const q = this.snap(c, last);
