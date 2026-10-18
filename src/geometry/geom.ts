@@ -146,6 +146,26 @@ export function cleanPolygon(poly: Vec[], eps = 1e-4): Vec[] {
   return pts;
 }
 
+/** Entfernt Eckpunkte, die weniger als tol von der Verbindung ihrer Nachbarn abweichen. */
+export function straighten(poly: Vec[], tol: number): Vec[] {
+  let pts = poly.slice();
+  let changed = true;
+  while (changed && pts.length > 3) {
+    changed = false;
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[(i - 1 + pts.length) % pts.length];
+      const b = pts[i];
+      const c = pts[(i + 1) % pts.length];
+      if (distToSegment(b, a, c) < tol) {
+        pts = pts.filter((_, k) => k !== i);
+        changed = true;
+        break;
+      }
+    }
+  }
+  return pts;
+}
+
 function segmentsIntersect(a: Vec, b: Vec, c: Vec, d: Vec): boolean {
   const d1 = cross(sub(b, a), sub(c, a));
   const d2 = cross(sub(b, a), sub(d, a));
@@ -173,7 +193,7 @@ export function isSimplePolygon(poly: Vec[]): boolean {
  * Liefert null, wenn das Polygon dabei kollabiert oder sich selbst schneidet.
  */
 export function insetPolygon(polyIn: Vec[], d: number): Vec[] | null {
-  const poly = cleanPolygon(polyIn);
+  const poly = straighten(cleanPolygon(polyIn), 0.005);
   if (poly.length < 3) return null;
   const sa = signedArea(poly);
   const sign = sa > 0 ? 1 : -1;

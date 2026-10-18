@@ -8,7 +8,7 @@
 //     sonst Außenwand mit gemessener Dicke; Lücken aus Schritt 3 → Türen bzw. Fenster
 
 import type { Opening, Vec, Wall, WallKind } from '../model/types';
-import { add, area, cleanPolygon, cross, dist, dot, mul, norm, simplifyPolygon, sub, v } from './geom';
+import { add, area, cleanPolygon, cross, dist, dot, mul, norm, simplifyPolygon, straighten, sub, v } from './geom';
 import { close, components, floodOutside, open, otsu, traceContour, type Mask } from './raster';
 
 export interface RecognizeOptions {
@@ -186,6 +186,7 @@ export function recognizeFromGray(gray: Uint8Array, W: number, H: number, origin
     let poly = cleanPolygon(simplifyPolygon(pts, res * 2), 1e-3);
     if (poly.length < 3) continue;
     poly = removeNotches(orthogonalize(poly));
+    poly = orthogonalize(straighten(poly, 0.03));
     poly = poly.map((p) => v(Math.round(p.x * 100) / 100, Math.round(p.y * 100) / 100));
     const a = area(poly);
     if (a < opts.minRoomArea) continue;

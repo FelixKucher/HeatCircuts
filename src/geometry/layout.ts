@@ -1,5 +1,5 @@
 import type { LayingPattern, Vec } from '../model/types';
-import { area, bbox, clipHalfPlane, dist, insetPolygon, scanlineIntervals, v } from './geom';
+import { area, bbox, clipHalfPlane, dist, insetPolygon, pointInPolygon, scanlineIntervals, v } from './geom';
 
 export interface CircuitDrawing {
   /** Vorlauf-Linienzüge */
@@ -82,8 +82,18 @@ function spiralLayout(poly: Vec[], spacing: number, wallDistance: number, entry:
     const lastOfKind = k + 2 >= rings.length;
     (k % 2 === 0 ? sup : ret).push(...open(ring, lastOfKind));
   });
-  // Umkehr in der Mitte
-  if (ret.length) sup.push(ret[ret.length - 1]);
+  // Umkehr in der Mitte: rechtwinklig über einen Eckpunkt im Raum
+  if (ret.length) {
+    const a = sup[sup.length - 1];
+    const b = ret[ret.length - 1];
+    if (Math.abs(a.x - b.x) > 1e-3 && Math.abs(a.y - b.y) > 1e-3) {
+      const inner = rings[rings.length - 1];
+      const c1 = v(b.x, a.y);
+      const c2 = v(a.x, b.y);
+      sup.push(pointInPolygon(c1, inner) || !pointInPolygon(c2, inner) ? c1 : c2);
+    }
+    sup.push(b);
+  }
   const retOut = ret.slice().reverse();
   return { supply: [sup], ret: retOut.length ? [retOut] : [], inlet: sup[0] ?? null, outlet: retOut[retOut.length - 1] ?? sup[sup.length - 1] ?? null };
 }

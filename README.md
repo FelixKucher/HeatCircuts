@@ -1,97 +1,115 @@
 # HeatCircuits
 
-Planungssoftware für Fußbodenheizungen, inspiriert von LoopCAD und auf Europa ausgerichtet:
-metrische Einheiten, °C, Heizlast in Anlehnung an **EN 12831-1 / DIN/TS 12831-1** und Auslegung nach **EN 1264-2/-3**.
+Planungssoftware für Flächenheizungen, inspiriert von LoopCAD und auf Europa ausgerichtet:
+metrische Einheiten, °C, Heizlast in Anlehnung an **EN 12831-1 / DIN/TS 12831-1**, Erdreich nach **EN ISO 13370**,
+U-Werte nach **EN ISO 6946** und Auslegung nach **EN 1264-2/-3/-5**.
 Die App läuft vollständig im Browser, ohne Server und ohne Konto.
+
+## Ablauf
+
+Der **Planungsassistent** führt durch acht Schritte:
+
+1. **Projekt und Standort.** Norm-Außentemperatur und Jahresmittel für DE, AT, CH und weitere EU-Städte.
+2. **Gebäude.** Das Baujahr setzt Schichtaufbauten, Fenster und Wärmebrückenzuschlag (11 Baualtersklassen). Dazu kommen Außenwand, Bodenplatte bzw. Kellerdecke und Dach mit Dämmebene.
+3. **Geschosse.** Vorlagen von EG bis Keller + EG + OG oder Dachgeschoss, mit Höhen und erdberührten Geschossen.
+4. **Heizsystem.** Zur Wahl stehen Nasssystem, Fräs-System, Trockensystem und Elektro-Heizmatte. Die zulässigen Verlegeabstände (7,5 / 10 / 12,5 / 15 / 17,5 / 20 cm, erweiterbar) und die Ziel-Vorlauftemperatur werden hier festgelegt.
+5. **Grundrisse.** Bild laden und den Maßstab über zwei Punkte mit bekanntem Abstand kalibrieren. Danach erkennt die App **Räume, Wände, Türen und Fenster automatisch**.
+6. **Räume prüfen.** Raumart (Temperatur, Luftwechsel, Belag, Abstand) und Heizsystem je Raum.
+7. **Verteiler setzen.** Danach werden die Heizkreise **automatisch erzeugt**: Raumzuordnung mit Kapazitätsgrenze, Leitungsführung um Wände und durch Türen, Verlegeabstände aus der zulässigen Liste.
+8. **Ergebnis.** Kennzahlen, Tabellen und 3D-Ansicht.
 
 ## Funktionen
 
 | Bereich | Umfang |
 | --- | --- |
-| Grundriss | Bild laden (PNG, JPG, WebP, GIF, SVG), Maßstab über zwei Punkte mit bekanntem Abstand kalibrieren (1 m im Plan = 1 m im Bild), Bild verschieben, Deckkraft |
-| Geschosse | beliebig viele Geschosse mit Höhenlage, Geschoss- und Raumhöhe; Umschalten rechts in der Geschossliste oder mit Bild ↑/↓; Wände des Nachbargeschosses scheinen durch |
-| Zeichnen | Wände entlang der Achse (Außen-, Innen-, Wand zu unbeheizt; 36,5 / 30 / 24 / 17,5 / 11,5 cm), Längeneingabe per Tastatur, Ortho, Raster- und Eckenfang |
-| Räume | Raumerkennung per Klick an der Wandinnenkante, Polygon oder Rechteck; Raumarten mit θ_int, n_min, Belag und Verlegeabstand vorbelegt |
-| Heizkreise | automatische Verlegung als Schnecke (bifilar) oder Mäander, Aufteilung nach maximaler Kreislänge **und** maximalem Druckverlust |
-| Leitungen | Anbindeleitung Raum → Verteiler automatisch orthogonal oder manuell geführt; Länge Verteiler → Wärmeerzeuger inkl. Steigleitung über Geschosse |
-| Gebäude | Standort mit θ_e und θ_m,e (DE, AT, CH, weitere EU-Städte), Baustandard-Vorlagen für U-Werte (Altbau bis Passivhaus), Wärmebrückenzuschlag, WRG |
-| Ergebnisse | Raumheizlast, Wärmestromdichte, Oberflächentemperatur, Spreizung, Massenstrom, Druckverlust, hydraulischer Abgleich, Verteiler, Materialliste |
-| Export | Projektdatei (JSON inkl. Bilder), Plan als SVG, Tabellen als CSV (Semikolon, Dezimalkomma); Autosave im Browser |
+| Bauteile | Baustoffbibliothek (40 Materialien), Schichtaufbauten mit U-Wert nach EN ISO 6946, Vorlagen je Baualtersklasse, Fenstertypen |
+| Zeichnen | Wände entlang der Achse mit Längeneingabe, Fenster, Türen, Außentüren und Garagentore als Wandöffnungen, gerade Treppen, Spindeltreppen und Lufträume als Deckenöffnungen |
+| Räume | Erkennung per Klick oder aus dem Grundrissbild, Polygon, Rechteck; Garage im Haus, unbeheizter Keller und Dachboden mit Temperatur-Korrekturfaktor b_u |
+| Heizflächen | mehrere je Raum: Fußboden (Nass, Fräs, Trocken, Elektro), Wandheizung (Putz, Trockenbau), Deckenheizung (Putz, Gipskarton) |
+| Verlegung | Schnecke (bifilar) oder Mäander; Ecken mit Mindestbiegeradius 5 × D, enge 180°-Umlenkungen als Omega-Bogen; Aussparung von Treppenlöchern |
+| Wandansicht | Doppelklick auf eine Wand: Abwicklung von der Raumseite mit Öffnungen, verschiebbaren Heizfeldern und Rohrbahnen um Fenster |
+| 3D | Wände mit Öffnungen, Böden mit Treppenlöchern, Heizkreise, Wand- und Deckenheizflächen, Treppen, Sattel-, Walm-, Pult- und Flachdach mit Kniestock |
+| Leitungen | Anbindeleitungen Raum → Verteiler (automatisch per A* oder manuell), Verteiler → Wärmeerzeuger inkl. Steigleitung |
+| Ergebnisse | Heizlast je Bauteil und Nachbarfläche, Heizflächen, Heizkreise mit Druckverlust und Abgleich, Verteiler, Materialliste (Rohr je Typ, Rollen, Heizmatten, Randdämmstreifen) |
+| Export | Projektdatei (JSON inkl. Bilder), Plan als SVG, 3D-Ansicht als PNG, Tabellen als CSV (Semikolon, Dezimalkomma); Autosave im Browser |
 
-## Bedienung
+## Tastenkürzel
 
 | Taste | Werkzeug |
 | --- | --- |
-| V | Auswählen / Bearbeiten (Eckpunkte ziehen, Mittelpunkte ziehen fügt Ecken ein) |
-| H oder Leertaste | Ansicht verschieben |
-| W | Wand zeichnen (Länge eintippen + Enter; Shift hebt Ortho auf; Esc beendet) |
-| E | Raum per Klick erkennen |
-| R / Q | Raum als Polygon / Rechteck |
-| M | Heizkreisverteiler setzen |
-| L | Anbindeleitung führen |
-| G | Wärmeerzeuger setzen |
-| K | Maßstab kalibrieren |
-| B | Grundrissbild verschieben |
-| D | Messen |
-| F | Einpassen |
-| ⌘/Strg + Z, ⇧⌘Z | Rückgängig / Wiederholen |
-| ⌘/Strg + S | Projektdatei speichern |
-
-Typischer Ablauf:
-
-1. **Gebäude**: Standort, Baustandard und U-Werte festlegen.
-2. **Grundriss laden** und mit **K** kalibrieren, z. B. über eine lange Maßkette.
-3. Wände mit **W** nachzeichnen. Türöffnungen schließen, damit die Raumerkennung funktioniert.
-4. Räume mit **E** erkennen, Raumart, Fensterfläche und Belag setzen.
-5. Verteiler (**M**) und Wärmeerzeuger (**G**) platzieren, bei Bedarf Leitungen mit **L** führen.
-6. **Auslegung**: Rohr, Estrich und Spreizung prüfen, gegebenenfalls Verlegeabstände optimieren.
-7. Mit **+ Geschoss** weitere Geschosse anlegen; die Außenwände werden übernommen.
+| V / H | Auswählen / Ansicht verschieben (auch Leertaste) |
+| W | Wand (Länge eintippen + Enter, Shift hebt Ortho auf) |
+| E / R / Q | Raum erkennen / Polygon / Rechteck |
+| O | Fenster, Tür oder Tor auf eine Wand setzen |
+| T / S / U | Treppe / Spindeltreppe / Luftraum |
+| M / L / G | Verteiler / Anbindeleitung / Wärmeerzeuger |
+| K / B / D | Maßstab kalibrieren / Bild verschieben / Messen |
+| 3 | Grundriss ↔ 3D |
+| F, + / − | Einpassen, Zoom |
+| Bild ↑ / Bild ↓ | Geschoss wechseln |
+| ⌘/Strg + Z, ⇧⌘Z, ⌘/Strg + S | Rückgängig, Wiederholen, Speichern |
 
 ## Rechenverfahren
 
 ### Heizlast (vereinfacht nach EN 12831-1)
 
-- Transmission: Φ_T = Σ A·(U + ΔU_WB)·b·(θ_int − θ_e)
-  - Erdreich: f_g1 = 1,45, U, G_w = 1,0, Temperaturdifferenz (θ_int − θ_m,e)
-  - Temperaturkorrekturfaktoren: Wand zu unbeheizt b = 0,5, Kellerdecke b = 0,5, Decke zum Dachraum b = 0,8
-  - Innenwände zu kälteren Räumen desselben Geschosses mit U_Innenwand
-- Lüftung: Φ_V = 0,34 Wh/(m³K) · n_min · V · (θ_int − θ_e) · (1 − η_WRG)
-- Außenwandlängen werden aus den gezeichneten Außenwänden entlang der Raumkontur ermittelt und lassen sich je Raum überschreiben.
-- **Nicht enthalten:** Wiederaufheizleistung, Grundwassereinfluss, Gewinne aus Nachbarräumen, vertikale Wärmeströme zwischen Geschossen mit unterschiedlicher Temperatur.
+- **Transmission:** Φ_T = Σ A·(U + ΔU_WB)·b·(θ_int − θ_e).
+  - Fenster- und Türflächen ergeben sich aus den gezeichneten Öffnungen.
+  - Außenwandlängen werden entlang der Raumkontur ermittelt.
+- **Erdreich:** Φ = f_g1·A·U_equiv·G_w·(θ_int − θ_m,e), mit U_equiv nach EN ISO 13370 aus B′ = A/(0,5·P) und d_t. Für Keller gelten Kellerboden und Kellerwand bis zur Tiefe z.
+- **Boden und Decke:** Die Nachbarflächen werden je Raum durch Überlagerung mit den Geschossen darüber und darunter ermittelt.
+  - Möglich sind: Erdreich, unbeheizter Raum (b_u nach Raumart, z. B. Garage 0,8), kühlerer beheizter Raum, Außenluft, Dachschräge (A/cos α), oberste Geschossdecke (b = 0,8) oder Flachdach.
+  - Treppenlöcher werden ausgespart.
+- **Lüftung:** Φ_V = 0,34 · n_min · V · (θ_int − θ_e) · (1 − η_WRG).
+- **Nicht enthalten:** Wiederaufheizleistung, Grundwassereinfluss, Gewinne aus Nachbarräumen.
 
-### Fußbodenheizung (EN 1264-2/-3, Nasssystem Typ A)
+### Heizflächen
 
-- Kennlinie q = B · a_B · a_T^m_T · a_ü^m_ü · a_D^m_D · Δθ_H mit B = 6,7 W/(m²K).
-  - a_B und a_T sind exakt nach Norm.
-  - a_ü und a_D sind tabellarisch genähert. Bei der Standardüberdeckung s_ü = 45 mm ist m_ü = 0, dann wirkt a_ü nicht.
-- Grenzwärmestromdichte aus der Basiskennlinie q = 8,92·(θ_F,m − θ_i)^1,1 mit θ_F,max = 29 °C (Aufenthaltszone) bzw. 33 °C (Bad).
-- Vorlauftemperatur: aus dem Raum mit der höchsten Δθ_H ohne Bäder, bei σ = 5 K, exakt über den logarithmischen Mittelwert. Alternativ fest vorgebbar.
-- Spreizung der übrigen Räume: numerisch aus Δθ_H(σ) = σ / ln((θ_V − θ_i)/(θ_V − σ − θ_i)). Reicht der Vorlauf nicht aus, gilt σ = 3 K und die Restleistung wird als Zusatzheizfläche ausgewiesen.
-- Massenstrom nach EN 1264-3 inkl. Wärmeabgabe nach unten (R_o, R_u).
-- Rohrlänge: L = A/VA + 2·l_Anbindung. Die Kreisaufteilung erfolgt nach L_max und Δp_max.
-- Druckverlust nach Darcy-Weisbach (laminar 64/Re, turbulent Blasius); Wasser bei ca. 35 °C. Einzelwiderstände von Verteiler und Ventilen sind nicht enthalten.
+- **Lastaufteilung:** Die Raumheizlast wird proportional zur Leistungsfähigkeit der Flächen an ihrer Grenztemperatur verteilt.
+  - Grenztemperaturen: Boden 29 °C bzw. 33 °C im Bad, Wand 35 °C, Decke 30 °C (Richtwerte).
+- **Fußboden (Wasser):** EN 1264-2 Typ A mit systemabhängiger Überdeckung (Nass 45 mm, Fräs 15 mm, Trocken 25 mm mit Faktor 0,85).
+  - a_B und a_T sind normgemäß; a_ü und a_D sind tabellarisch genähert.
+- **Wand / Decke (Wasser):** Linienquellen-Widerstandsmodell K_H = k / (T/(2πλ)·ln(T/(πD)) + s/λ + 1/α) mit den Basiskennlinien nach EN 1264-5 (α_Wand = 8, α_Decke = 6 W/m²K). Die Trockenbau-Varianten sind genähert.
+- **Elektro:** Wärmestromdichte = min(Bedarf, installierte Leistung, Grenzkurve); Stromkreise zu je höchstens 3,68 kW (16 A).
+- **Vorlauftemperatur:** aus der höchsten Δθ_H aller Wasserflächen (Bad-Fußböden ausgenommen) bei σ = 5 K, exakt über den logarithmischen Mittelwert.
+  - Für die übrigen Flächen wird σ numerisch bestimmt, mindestens 3 K.
+  - Reicht der Vorlauf nicht, wird die Restleistung als Zusatzheizfläche ausgewiesen.
+- **Kreise und Hydraulik:** Rohrlänge L = A/VA + 2·l_Anbindung; Aufteilung nach L_max und Δp_max; Massenstrom nach EN 1264-3 inkl. Rückseitenverlust; Druckverlust nach Darcy-Weisbach.
 
-Die Klimadaten sind Richtwerte zur Vorbelegung. Verbindlich sind die nationalen Anhänge (DIN/TS 12831-1 nach PLZ, ÖNORM H 7500-1, SIA 384/2).
-Die Ergebnisse ersetzen nicht die geprüften Systemkennlinien des Rohr- bzw. Systemherstellers.
+### Automatische Verteilung
+
+- **Zuordnung:** Regret-Heuristik (Räume mit dem größten Nachteil bei Zweitwahl zuerst) unter Beachtung der Abgänge je Verteiler. Von Hand gewählte Verteiler bleiben erhalten.
+- **Leitungsführung:** A* auf einem 10-cm-Raster. Kosten entstehen für Wanddurchbrüche (Türöffnungen sind frei, Außenwände gesperrt), fremde Räume und Richtungswechsel.
+- **Verlegeabstand:** je Fläche der größte zulässige Abstand, der bei der Ziel-Vorlauftemperatur reicht. Von Hand gesetzte Abstände bleiben erhalten.
+
+### Grundrisserkennung
+
+1. Graustufen, Schwellwert nach Otsu.
+2. Morphologisches Öffnen mit halber Mindestwanddicke entfernt Text, Maßketten und Türbögen.
+3. Schließen mit halber Türbreite trennt die Räume an Türen; ein Schließen bis 3,2 m bestimmt die Gebäudehülle trotz Fenstern.
+4. Konturverfolgung, Vereinfachung, Orthogonalisierung und Entfernen von Fensternischen ergeben die Raumpolygone.
+5. Wände entstehen aus gegenüberliegenden Raumkanten (Innenwand) bzw. aus gemessener Wanddicke (Außenwand). Lücken in den Wänden werden zu Türen und Fenstern.
+
+Die Erkennung arbeitet am besten mit gefüllt oder schraffiert gezeichneten Wänden. Das Ergebnis immer prüfen.
+
+Die Klimadaten sind Richtwerte; verbindlich sind die nationalen Anhänge. Die Ergebnisse ersetzen nicht die geprüften Systemkennlinien des Herstellers.
 
 ## Entwicklung
 
 ```bash
-npm install          # .npmrc setzt legacy-peer-deps
-npm run dev          # Entwicklungsserver
-npm test             # Vitest (Geometrie, EN 1264, Heizlast, Hydraulik)
-npm run build        # statische Seite in dist/
-npm run build:single # eine eigenständige HTML-Datei in dist-single/
+npm install            # .npmrc setzt legacy-peer-deps
+npm run dev            # Entwicklungsserver
+npm test               # Vitest: Geometrie, Erkennung, Bauteile, Heizlast, EN 1264, Hydraulik, Verteilung
+npm run build          # statische Seite in dist/
+npm run build:single   # eine eigenständige HTML-Datei in dist-single/ (läuft per Doppelklick)
 ```
-
-Struktur:
 
 ```
 src/
-  model/      Datenmodell, Stammdaten (Klima, Raumarten, Beläge, Rohre), Store mit Undo/Redo, Beispielprojekt
-  geometry/   Polygonoperationen, Raumerkennung (Rasterflutung + Konturverfolgung), Verlegemuster
-  calc/       Heizlast, EN-1264-Kennlinie, Hydraulik, Projektauslegung
-  ui/         SVG-Editor, Darstellung, Seitenleiste, Dialoge
+  model/      Datenmodell, Stammdaten, Bauteile, Heizsysteme, Store (Undo/Redo), Beispielprojekt
+  geometry/   Polygone, Raster/Morphologie, Raum- und Grundrisserkennung, Verlegemuster, Rohrbögen, Heizfelder
+  calc/       Heizlast, EN 1264, Heizflächen, Hydraulik, Auslegung, automatische Verteilung
+  ui/         Editor, Darstellung, Seitenleiste, Dialoge, Assistent, Wandansicht, 3D (Three.js)
   io/         Autosave (IndexedDB), Projektdatei, SVG-Export
 ```
 

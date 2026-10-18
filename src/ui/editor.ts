@@ -289,7 +289,9 @@ export class Editor {
     s.addEventListener('dblclick', (e) => {
       e.preventDefault();
       if (this.tool === 'select') {
-        const t = (e.target as Element).closest('[data-kind]') as SVGElement | null;
+        // Zeigererfassung leitet dblclick auf das SVG um – Element unter dem Zeiger direkt bestimmen
+        const under = document.elementFromPoint(e.clientX, e.clientY);
+        const t = under?.closest('[data-kind]') as SVGElement | null;
         const ds = t?.dataset;
         if (ds?.kind === 'wall' && ds.id) return this.cb.openWallView(ds.id, null);
         if (ds?.kind === 'wallheat' && ds.id) {

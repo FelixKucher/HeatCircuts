@@ -2034,3 +2034,31 @@ table.wz-table td.r {
     bottom: 10px;
   }
 }
+
+/* kompakte Kopfzeile auf Laptopbreiten */
+@media (max-width: 1640px) {
+  .topbar {
+    gap: 8px;
+  }
+  .topbar .btn.ghost {
+    padding: 5px 8px;
+  }
+  .project-name {
+    max-width: 22ch;
+    padding-left: 10px;
+  }
+  .kpi {
+    padding: 2px 7px;
+  }
+  .summary .kpi:nth-child(4) {
+    display: none;
+  }
+  .brand-name {
+    font-size: 17px;
+  }
+}
+@media (max-width: 1380px) {
+  .chip.example {
+    display: none;
+  }
+}
