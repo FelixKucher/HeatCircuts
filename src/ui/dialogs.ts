@@ -251,6 +251,7 @@ export function designFields(p: Project, res: DesignResult): string {
         { kind: 'num', key: 'd.maxCircuitLength', label: 'max. Kreislänge inkl. Anbindung', value: d.maxCircuitLength, unit: 'm', digits: 0 },
         { kind: 'num', key: 'd.maxPressureDrop', label: 'max. Druckverlust je Kreis', value: d.maxPressureDrop / 100, unit: 'mbar', digits: 0 },
         { kind: 'num', key: 'd.maxOutlets', label: 'Abgänge je neuem Verteiler', value: d.maxOutlets, digits: 0 },
+        { kind: 'check', key: 'd.balanceLengths', label: 'Kreislängen je Verteiler angleichen', value: d.balanceLengths },
         { kind: 'num', key: 'd.wallDistance', label: 'Randabstand zur Wand', value: d.wallDistance * 100, unit: 'cm', digits: 1 },
         { kind: 'select', key: 'd.rollLength', label: 'Rollenlänge', value: String(d.rollLength), options: [['120', '120 m'], ['200', '200 m'], ['240', '240 m'], ['500', '500 m'], ['600', '600 m']] },
       ],
@@ -302,6 +303,9 @@ export function applyDesignField(store: Store, key: string, val: unknown): void 
         break;
       case 'maxOutlets':
         if (n && n >= 2) d.maxOutlets = Math.round(n);
+        break;
+      case 'balanceLengths':
+        d.balanceLengths = !!val;
         break;
       case 'wallDistance':
         if (n !== null && n >= 0) d.wallDistance = n / 100;
@@ -507,10 +511,10 @@ export function resultTable(tab: ResultsTab, p: Project, d: DesignResult): Table
     }
     case 'manifolds':
       return {
-        head: ['Verteiler', 'Geschoss', 'Abgänge', 'Leistung [W]', 'ṁ [kg/h]', 'max. Δp [mbar]', 'Zuleitung einfach [m]', 'Vor- + Rücklauf [m]', 'Dimension', 'v [m/s]', 'Δp Zuleitung [mbar]'],
-        align: ['l', 'l', 'r', 'r', 'r', 'r', 'r', 'r', 'l', 'r', 'r'],
-        rows: d.manifolds.map((m) => [m.name, floorName(p, m.floorId), `${m.outlets}/${m.maxOutlets}`, n(m.heat, 0), n(m.massFlow, 0), n(m.maxPressureDrop / 100, 0), n(m.supplyLength, 2), n(2 * m.supplyLength, 2), m.supplyPipe ?? '–', n(m.supplyVelocity, 2), n(m.supplyPressureDrop / 100, 0)]),
-        foot: ['Summe', '', d.totals.circuits, n(d.totals.output, 0), n(d.totals.massFlow, 0), '', '', n(d.totals.supplyLinesTotal, 2), '', '', ''],
+        head: ['Verteiler', 'Geschoss', 'Abgänge', 'Leistung [W]', 'ṁ [kg/h]', 'max. Δp [mbar]', 'Kreise min–max [m]', 'Streuung', 'Zuleitung einfach [m]', 'Vor- + Rücklauf [m]', 'Dimension', 'v [m/s]', 'Δp Zuleitung [mbar]'],
+        align: ['l', 'l', 'r', 'r', 'r', 'r', 'r', 'r', 'r', 'r', 'l', 'r', 'r'],
+        rows: d.manifolds.map((m) => [m.name, floorName(p, m.floorId), `${m.outlets}/${m.maxOutlets}`, n(m.heat, 0), n(m.massFlow, 0), n(m.maxPressureDrop / 100, 0), `${n(m.lengthMin, 1)}–${n(m.lengthMax, 1)}`, `${n(m.lengthSpread * 100, 0)} %`, n(m.supplyLength, 2), n(2 * m.supplyLength, 2), m.supplyPipe ?? '–', n(m.supplyVelocity, 2), n(m.supplyPressureDrop / 100, 0)]),
+        foot: ['Summe', '', d.totals.circuits, n(d.totals.output, 0), n(d.totals.massFlow, 0), '', '', '', '', n(d.totals.supplyLinesTotal, 2), '', '', ''],
       };
     case 'material': {
       const rows: (string | number)[][] = [];

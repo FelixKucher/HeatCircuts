@@ -21,6 +21,7 @@ export const WARNING_TEXT: Record<Warning, string> = {
   'pressure-high': 'Druckverlust eines Heizkreises über dem Grenzwert.',
   'no-surface': 'Beheizter Raum ohne Heizfläche – Fußboden-, Wand- oder Deckenheizung hinzufügen.',
   'wall-missing': 'Die Wand der Wandheizung existiert nicht mehr – Wand neu wählen.',
+  'circuit-short': 'Heizkreis deutlich kürzer als die übrigen am Verteiler – stark drosseln, engeren Verlegeabstand wählen oder Verteiler näher setzen.',
 };
 
 export interface SidebarActions {
@@ -396,6 +397,8 @@ export class Sidebar {
         <dt>Heizleistung</dt><dd>${W(mr.heat)}</dd>
         <dt>Massenstrom</dt><dd>${kgh(mr.massFlow)}</dd>
         <dt>max. Δp Heizkreis</dt><dd>${mbar(mr.maxPressureDrop)}</dd>
+        <dt>Kreislängen min – max</dt><dd class="${mr.lengthSpread > 0.35 ? 'warn' : ''}">${num(mr.lengthMin, 1)} – ${num(mr.lengthMax, 1)} m</dd>
+        <dt>Streuung (max − min) / Mittel</dt><dd class="${mr.lengthSpread > 0.35 ? 'warn' : ''}">${num(mr.lengthSpread * 100, 0)} %</dd>
         <dt>Zuleitung Vor- + Rücklauf</dt><dd>${m(2 * mr.supplyLength, 1)}</dd>
         <dt>Rohrdimension</dt><dd>${esc(mr.supplyPipe ?? '–')}</dd>
         <dt>v / Δp Zuleitung</dt><dd>${num(mr.supplyVelocity, 2)} m/s · ${mbar(mr.supplyPressureDrop)}</dd>

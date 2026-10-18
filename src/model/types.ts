@@ -251,6 +251,8 @@ export interface DesignParams {
   rollLength: number;
   /** maximale Anzahl Abgänge je Verteiler (automatische Verteilung) */
   maxOutlets: number;
+  /** Kreisanzahl je Verteiler so wählen, dass die Kreislängen möglichst gleich sind */
+  balanceLengths: boolean;
 }
 
 export interface Project {

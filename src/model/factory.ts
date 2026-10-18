@@ -85,6 +85,7 @@ export function defaultDesign(): DesignParams {
     wallDistance: 0.1,
     rollLength: 240,
     maxOutlets: 12,
+    balanceLengths: true,
   };
 }
 

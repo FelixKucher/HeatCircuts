@@ -189,6 +189,27 @@ describe('Heizlast und Auslegung', () => {
     expect([0.1, 0.15, 0.2]).toContain(r.surfaces[0].spacing);
   });
 
+  it('Längenausgleich: geringere Streuung der Kreislängen je Verteiler, Abgänge eingehalten', () => {
+    const p = newProject();
+    const f = p.floors[0];
+    const rect = (x0: number, y0: number, x1: number, y1: number) => [v(x0, y0), v(x1, y0), v(x1, y1), v(x0, y1)];
+    // großer Raum (≈ 1,6 Kreise), mittlerer und kleiner Raum
+    for (const [poly, type] of [[rect(0, 0, 6, 4), 'wohnen'], [rect(6.2, 0, 9.2, 4), 'schlafen'], [rect(0, 4.2, 2.5, 6.2), 'flur']] as const) {
+      const r = newRoom(p, f, poly as unknown as ReturnType<typeof rect>, type);
+      r.surfaces[0].spacing = 0.15;
+      r.surfaces[0].spacingLocked = true;
+      f.rooms.push(r);
+    }
+    f.manifolds.push({ id: 'm1', name: 'HKV', pos: v(3, 4.1), supplyLengthOverride: null, maxOutlets: 12 });
+    p.design.balanceLengths = false;
+    const off = computeDesign(p).manifolds[0];
+    p.design.balanceLengths = true;
+    const on = computeDesign(p).manifolds[0];
+    expect(on.lengthSpread).toBeLessThan(off.lengthSpread);
+    expect(on.outlets).toBeLessThanOrEqual(12);
+    for (const c of on.circuits) expect(c.length).toBeLessThanOrEqual(p.design.maxCircuitLength + 1e-6);
+  });
+
   it('Migration v1 → v2', () => {
     const v1 = { version: 1, name: 'Alt', floors: [{ id: 'f', name: 'EG', elevation: 0, storeyHeight: 2.9, clearHeight: 2.5, background: null, walls: [{ id: 'w', a: v(0, 0), b: v(1, 0), thickness: 0.3, kind: 'exterior' }], rooms: [{ id: 'r', name: 'R', type: 'wohnen', polygon: [], heated: true, spacing: 0.1, pattern: 'meander' }], manifolds: [], routes: [] }] };
     const p = migrateProject(v1);

@@ -20,7 +20,8 @@ export type Warning =
   | 'covering-too-high'
   | 'pressure-high'
   | 'no-surface'
-  | 'wall-missing';
+  | 'wall-missing'
+  | 'circuit-short';
 
 export interface CircuitResult {
   key: string;
@@ -107,6 +108,12 @@ export interface ManifoldResult {
   supplyPipe: string | null;
   supplyVelocity: number;
   supplyPressureDrop: number;
+  /** kürzester / längster / mittlerer Kreis in m */
+  lengthMin: number;
+  lengthMax: number;
+  lengthMean: number;
+  /** Streuung (max − min) / Mittel */
+  lengthSpread: number;
 }
 
 export interface DesignResult {
@@ -143,6 +150,105 @@ const MIN_SIGMA = 3;
 const MAX_CIRCUITS_PER_SURFACE = 12;
 /** maximale Leistung je elektrischem Heizkreis (16 A · 230 V) in W */
 const ELECTRIC_CIRCUIT_MAX = 3680;
+
+interface CircuitJob {
+  manifoldId: string;
+  r: Room;
+  f: Floor;
+  s: SurfaceResult;
+  pipeKey: string;
+  pipeInner: number;
+  lMax: number;
+  lPipeTotal: number;
+  lFeed2: number;
+  mTotal: number;
+  nMin: number;
+  fixed: number | null;
+  n: number;
+}
+
+const lengthOf = (j: CircuitJob, n: number) => j.lPipeTotal / n + j.lFeed2;
+
+/**
+ * Längenausgleich: Für eine Ziellänge T erhält jede Fläche n = round(L_Rohr / (T − 2·l_A)) Kreise
+ * (mindestens so viele, wie L_max und Δp_max verlangen). Gewählt wird die Ziellänge mit dem kleinsten
+ * Variationskoeffizienten der Kreislängen, mit Aufschlag je Kreis und für überschrittene Abgänge.
+ */
+export function balanceCircuitCounts(list: CircuitJob[], maxOutlets: number): void {
+  if (list.length < 2) return;
+  const candidates = new Set<number>();
+  for (const j of list) {
+    for (let n = j.nMin; n <= Math.min(MAX_CIRCUITS_PER_SURFACE, j.nMin + 3); n++) {
+      const L = lengthOf(j, n);
+      if (L <= j.lMax + 1e-6) candidates.add(Math.round(L * 10) / 10);
+    }
+  }
+  let best: number[] | null = null;
+  let bestCost = Infinity;
+  for (const T of candidates) {
+    const ns = list.map((j) => {
+      if (j.fixed) return j.fixed;
+      const free = T - j.lFeed2;
+      const n = free > 1 ? Math.round(j.lPipeTotal / free) : j.nMin;
+      return Math.min(MAX_CIRCUITS_PER_SURFACE, Math.max(j.nMin, n));
+    });
+    const lengths = list.flatMap((j, i) => Array.from({ length: ns[i] }, () => lengthOf(j, ns[i])));
+    const mean = lengths.reduce((a, x) => a + x, 0) / lengths.length;
+    const sd = Math.sqrt(lengths.reduce((a, x) => a + (x - mean) * (x - mean), 0) / lengths.length);
+    const total = ns.reduce((a, x) => a + x, 0);
+    const cost = sd / mean + 0.02 * total + 2 * Math.max(0, total - maxOutlets);
+    if (cost < bestCost - 1e-9) {
+      bestCost = cost;
+      best = ns;
+    }
+  }
+  if (best) list.forEach((j, i) => (j.n = best![i]));
+}
+
+function emitCircuits(j: CircuitJob, maxDp: number): void {
+  const { r, f, s, n } = j;
+  for (let i = 0; i < n; i++) {
+    const lr = j.lPipeTotal / n;
+    const L = lr + j.lFeed2;
+    const m = j.mTotal / n;
+    const pf = pipeFlow(m, j.pipeInner, L);
+    if (L > j.lMax + 0.5 && !s.warnings.includes('circuit-too-long')) s.warnings.push('circuit-too-long');
+    if (pf.pressureDrop > maxDp * 1.01 && !s.warnings.includes('pressure-high')) s.warnings.push('pressure-high');
+    const tag = s.kind === 'floor' ? '' : ` ${SURFACE_NAMES[s.kind]}`;
+    s.circuits.push({
+      key: `${r.id}:${s.surfaceId}:${i}`,
+      roomId: r.id,
+      floorId: f.id,
+      surfaceId: s.surfaceId,
+      kind: s.kind,
+      pipe: j.pipeKey,
+      index: i,
+      label: `${r.name}${tag}${n > 1 ? ` ${i + 1}/${n}` : ''}`,
+      area: s.area / n,
+      lengthInRoom: lr,
+      lengthFeeder: j.lFeed2,
+      length: L,
+      massFlow: m,
+      litresPerMinute: toLitresPerMinute(m),
+      velocity: pf.velocity,
+      pressureDrop: pf.pressureDrop,
+      throttle: 0,
+    });
+  }
+}
+
+/** Längenkennwerte der Kreise mit dem am Verteiler vorherrschenden Rohr */
+export function lengthStats(circuits: CircuitResult[]): { lengthMin: number; lengthMax: number; lengthMean: number; lengthSpread: number } {
+  if (!circuits.length) return { lengthMin: 0, lengthMax: 0, lengthMean: 0, lengthSpread: 0 };
+  const counts = new Map<string, number>();
+  for (const c of circuits) counts.set(c.pipe, (counts.get(c.pipe) ?? 0) + 1);
+  const main = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  const ls = circuits.filter((c) => c.pipe === main).map((c) => c.length);
+  const mean = ls.reduce((a, x) => a + x, 0) / ls.length;
+  const min = Math.min(...ls);
+  const max = Math.max(...ls);
+  return { lengthMin: min, lengthMax: max, lengthMean: mean, lengthSpread: (max - min) / mean };
+}
 
 export function allManifolds(project: Project): { m: Manifold; floor: Floor }[] {
   return project.floors.flatMap((floor) => floor.manifolds.map((m) => ({ m, floor })));
@@ -335,6 +441,7 @@ export function computeDesign(project: Project): DesignResult {
   }
 
   // 3. Spreizung, Massenstrom, Kreise je Heizfläche
+  const jobs: CircuitJob[] = [];
   for (const { r, f } of all) {
     const res = rooms.get(r.id)!;
     for (const s of res.surfaces) {
@@ -387,51 +494,49 @@ export function computeDesign(project: Project): DesignResult {
       const lPipeTotal = s.area / surf.spacing;
       const vertical = s.kind === 'ceiling' ? f.clearHeight : s.kind === 'wall' ? (surf.field?.z0 ?? 0.2) + 0.3 : 0;
       const lFeed2 = 2 * (res.feederLength + vertical);
-      let n: number;
-      if (s.kind === 'floor' && r.circuitsOverride && r.circuitsOverride > 0) n = Math.round(r.circuitsOverride);
-      else {
-        const free = lMax - lFeed2;
-        if (free <= 5) {
-          n = Math.max(1, Math.ceil(lPipeTotal / Math.max(5, lMax * 0.5)));
-          s.warnings.push('feeder-too-long');
-        } else n = Math.max(1, Math.ceil(lPipeTotal / free));
-        while (n < MAX_CIRCUITS_PER_SURFACE && pipeFlow(mTotal / n, pipe.inner, lPipeTotal / n + lFeed2).pressureDrop > d.maxPressureDrop) n++;
-      }
-      for (let i = 0; i < n; i++) {
-        const lr = lPipeTotal / n;
-        const L = lr + lFeed2;
-        const m = mTotal / n;
-        const pf = pipeFlow(m, pipe.inner, L);
-        if (L > lMax + 0.5 && !s.warnings.includes('circuit-too-long')) s.warnings.push('circuit-too-long');
-        if (pf.pressureDrop > d.maxPressureDrop * 1.01 && !s.warnings.includes('pressure-high')) s.warnings.push('pressure-high');
-        const tag = s.kind === 'floor' ? '' : ` ${SURFACE_NAMES[s.kind]}`;
-        s.circuits.push({
-          key: `${r.id}:${s.surfaceId}:${i}`,
-          roomId: r.id,
-          floorId: f.id,
-          surfaceId: s.surfaceId,
-          kind: s.kind,
-          pipe: pipeKey,
-          index: i,
-          label: `${r.name}${tag}${n > 1 ? ` ${i + 1}/${n}` : ''}`,
-          area: s.area / n,
-          lengthInRoom: lr,
-          lengthFeeder: lFeed2,
-          length: L,
-          massFlow: m,
-          litresPerMinute: toLitresPerMinute(m),
-          velocity: pf.velocity,
-          pressureDrop: pf.pressureDrop,
-          throttle: 0,
-        });
-      }
+      let nMin: number;
+      const fixed = s.kind === 'floor' && r.circuitsOverride && r.circuitsOverride > 0 ? Math.round(r.circuitsOverride) : null;
+      const free = lMax - lFeed2;
+      if (free <= 5) {
+        nMin = Math.max(1, Math.ceil(lPipeTotal / Math.max(5, lMax * 0.5)));
+        s.warnings.push('feeder-too-long');
+      } else nMin = Math.max(1, Math.ceil(lPipeTotal / free));
+      while (nMin < MAX_CIRCUITS_PER_SURFACE && pipeFlow(mTotal / nMin, pipe.inner, lPipeTotal / nMin + lFeed2).pressureDrop > d.maxPressureDrop) nMin++;
+      jobs.push({ manifoldId: res.manifoldId, r, f, s, pipeKey, pipeInner: pipe.inner, lMax, lPipeTotal, lFeed2, mTotal, nMin: fixed ?? nMin, fixed, n: fixed ?? nMin });
     }
     res.output = res.surfaces.reduce((a, s) => a + s.output, 0);
     res.deficit = Math.max(0, res.heatLoad.total - res.output);
     res.massFlow = res.surfaces.reduce((a, s) => a + s.massFlow, 0);
-    res.circuits = res.surfaces.flatMap((s) => s.circuits);
-    for (const s of res.surfaces) for (const w of s.warnings) if (!res.warnings.includes(w)) res.warnings.push(w);
   }
+
+  // 3b. Kreisanzahl je Verteiler so wählen, dass die Kreislängen möglichst gleich sind
+  // Gruppen je Verteiler und Rohrtyp: Längen sind nur bei gleichem Rohr hydraulisch vergleichbar
+  const byManifold = new Map<string, CircuitJob[]>();
+  for (const j of jobs) {
+    const key = `${j.manifoldId}|${j.pipeKey}`;
+    const list = byManifold.get(key) ?? [];
+    list.push(j);
+    byManifold.set(key, list);
+  }
+  for (const [key, list] of byManifold) {
+    const mid = key.split('|')[0];
+    const cap = allManifolds(project).find((x) => x.m.id === mid)?.m.maxOutlets ?? d.maxOutlets;
+    // Abgänge, die andere Rohrgruppen am selben Verteiler bereits belegen
+    const others = jobs.filter((j) => j.manifoldId === mid && j.pipeKey !== list[0].pipeKey).reduce((a, j) => a + j.n, 0);
+    if (d.balanceLengths) balanceCircuitCounts(list, Math.max(1, cap - others));
+    for (const j of list) emitCircuits(j, d.maxPressureDrop);
+  }
+  for (const res of rooms.values()) {
+    res.circuits = res.surfaces.flatMap((s) => s.circuits);
+  }
+  // kurze Kreise markieren (deutlich unter dem Mittel des Verteilers)
+  for (const list of byManifold.values()) {
+    const all = list.flatMap((j) => j.s.circuits);
+    if (all.length < 3) continue;
+    const mean = all.reduce((a, c) => a + c.length, 0) / all.length;
+    for (const j of list) if (j.s.circuits.some((c) => c.length < 0.5 * mean) && !j.s.warnings.includes('circuit-short')) j.s.warnings.push('circuit-short');
+  }
+  for (const res of rooms.values()) for (const s of res.surfaces) for (const w of s.warnings) if (!res.warnings.includes(w)) res.warnings.push(w);
 
   // 4. Verteiler
   const manifolds: ManifoldResult[] = [];
@@ -476,6 +581,7 @@ export function computeDesign(project: Project): DesignResult {
       supplyPipe,
       supplyVelocity,
       supplyPressureDrop,
+      ...lengthStats(circuits),
     });
   }
 

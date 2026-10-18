@@ -295,8 +295,57 @@ export function autoLayout(project: Project): AutoLayoutReport {
         s.spacing = changes.get(s.id)!;
         report.spacingChanges++;
       }
+  if (project.design.balanceLengths) report.spacingChanges += densifyShortCircuits(project);
   report.thetaSupply = computeDesign(project).thetaSupply;
   return report;
+}
+
+/**
+ * Kreise, die deutlich kürzer als das Mittel ihres Verteilers (gleiches Rohr) sind, erhalten einen
+ * engeren Verlegeabstand aus der zulässigen Liste, damit sich die Längen angleichen. Nur Verdichtung:
+ * mehr Rohr erhöht die Leistungsreserve, die Spreizung wird größer. Gesperrte Abstände bleiben.
+ */
+function densifyShortCircuits(project: Project): number {
+  const design = computeDesign(project);
+  let changes = 0;
+  const allowed = project.design.allowedSpacings.slice().sort((a, b) => a - b);
+  for (const mr of design.manifolds) {
+    const groups = new Map<string, typeof mr.circuits>();
+    for (const c of mr.circuits) groups.set(c.pipe, [...(groups.get(c.pipe) ?? []), c]);
+    for (const [pipeKey, cs] of groups) {
+      if (cs.length < 3) continue;
+      const mean = cs.reduce((a, c) => a + c.length, 0) / cs.length;
+      const lMax = PIPES[pipeKey]?.maxLength ?? project.design.maxCircuitLength;
+      const bySurface = new Map<string, typeof cs>();
+      for (const c of cs) bySurface.set(c.surfaceId, [...(bySurface.get(c.surfaceId) ?? []), c]);
+      for (const [sid, list] of bySurface) {
+        const c0 = list[0];
+        if (c0.length >= 0.8 * mean || c0.kind !== 'floor') continue;
+        const room = project.floors.flatMap((f) => f.rooms).find((r) => r.id === c0.roomId);
+        const s = room?.surfaces.find((x) => x.id === sid);
+        if (!room || !s || s.spacingLocked) continue;
+        const n = list.length;
+        const area = c0.area * n;
+        let best = s.spacing;
+        let bestDiff = Math.abs(c0.length - mean);
+        for (const sp of allowed) {
+          if (sp >= s.spacing - 1e-9) continue;
+          const L = area / (n * sp) + c0.lengthFeeder;
+          if (L > Math.min(lMax, project.design.maxCircuitLength) + 1e-6) continue;
+          const diff = Math.abs(L - mean);
+          if (diff < bestDiff - 0.5) {
+            bestDiff = diff;
+            best = sp;
+          }
+        }
+        if (best !== s.spacing) {
+          s.spacing = best;
+          changes++;
+        }
+      }
+    }
+  }
+  return changes;
 }
 
 function snapInside(p: Vec, room: Room): Vec {
