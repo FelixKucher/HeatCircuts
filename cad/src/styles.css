@@ -102,7 +102,7 @@ input, select, textarea { font: inherit; color: var(--ink); }
 
 #app {
   display: grid;
-  height: 100vh;
+  height: 100%;
   grid-template-columns: 54px 256px minmax(0, 1fr) 296px;
   grid-template-rows: 48px minmax(0, 1fr) 26px;
   grid-template-areas: 'top top top top' 'tools left center props' 'status status status status';
