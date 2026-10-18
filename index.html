@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>HeatCircuits</title>
+    <meta name="claude:viewport-fit-sides" content="cover" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Cpath d=%22M6 26V9a3 3 0 0 1 3-3h14a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H13a3 3 0 0 1-3-3v-8a3 3 0 0 1 3-3h6a3 3 0 0 1 3 3v4%22 fill=%22none%22 stroke=%22%23cc3a2b%22 stroke-width=%222.6%22 stroke-linecap=%22round%22/%3E%3C/svg%3E" />
+    <meta name="description" content="Planung von Fußbodenheizungen nach EN 12831 und EN 1264 – metrisch, °C, für Europa." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+    />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="brand" aria-label="HeatCircuits">
+          <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+            <path d="M6 26V9a3 3 0 0 1 3-3h14a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H13a3 3 0 0 1-3-3v-8a3 3 0 0 1 3-3h6a3 3 0 0 1 3 3v4" class="bm-supply" />
+            <path d="M18 17v-1" class="bm-return" />
+          </svg>
+          <span class="brand-name">Heat<b>Circuits</b></span>
+        </div>
+        <button class="project-name" id="btn-project-name" title="Projekt- und Gebäudedaten bearbeiten"></button>
+        <span class="chip example" id="chip-example" hidden>Beispielprojekt</span>
+        <nav class="menu" aria-label="Hauptmenü">
+          <div class="dropdown">
+            <button class="btn ghost" id="btn-menu" aria-haspopup="true" aria-expanded="false">Projekt</button>
+            <div class="dropdown-menu" id="menu-project" hidden>
+              <button data-cmd="new">Neues Projekt</button>
+              <button data-cmd="open">Projektdatei öffnen …</button>
+              <button data-cmd="save">Projektdatei speichern <kbd>⌘S</kbd></button>
+              <hr />
+              <button data-cmd="export-svg">Plan des Geschosses als SVG</button>
+              <button data-cmd="export-svg-bg">Plan mit Grundrissbild als SVG</button>
+              <button data-cmd="export-csv">Ergebnistabellen als CSV</button>
+              <hr />
+              <button data-cmd="sample">Beispielprojekt laden</button>
+            </div>
+          </div>
+          <button class="btn ghost" id="btn-building">Gebäude</button>
+          <button class="btn ghost" id="btn-design">Auslegung</button>
+          <button class="btn ghost" id="btn-results" aria-pressed="false">Ergebnisse</button>
+        </nav>
+        <div class="undo">
+          <button class="icon-btn" id="btn-undo" title="Rückgängig (⌘Z)" aria-label="Rückgängig">
+            <svg viewBox="0 0 24 24"><path d="M9 7 4 12l5 5M4 12h11a5 5 0 0 1 0 10h-2" /></svg>
+          </button>
+          <button class="icon-btn" id="btn-redo" title="Wiederholen (⇧⌘Z)" aria-label="Wiederholen">
+            <svg viewBox="0 0 24 24"><path d="m15 7 5 5-5 5M20 12H9a5 5 0 0 0 0 10h2" /></svg>
+          </button>
+        </div>
+        <div class="summary" id="summary" aria-live="polite"></div>
+      </header>
+
+      <div class="workspace">
+        <nav class="toolbar" aria-label="Werkzeuge">
+          <button class="tool" data-tool="select" title="Auswählen (V)" aria-label="Auswählen">
+            <svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 1.5L10 19z" /></svg><span>Wahl</span>
+          </button>
+          <button class="tool" data-tool="pan" title="Ansicht verschieben (H, Leertaste)" aria-label="Ansicht verschieben">
+            <svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3l-3 3m3-3 3 3M12 21l-3-3m3 3 3-3M3 12l3-3m-3 3 3 3M21 12l-3-3m3 3-3 3" /></svg><span>Ansicht</span>
+          </button>
+          <span class="tool-sep"></span>
+          <button class="tool" data-tool="wall" title="Wand zeichnen (W)" aria-label="Wand zeichnen">
+            <svg viewBox="0 0 24 24"><path d="M3 20V8h8V4h10v16z" class="fillish" /></svg><span>Wand</span>
+          </button>
+          <button class="tool" data-tool="detect" title="Raum per Klick erkennen (E)" aria-label="Raum erkennen">
+            <svg viewBox="0 0 24 24"><path d="M3 3h18v18H3z" /><path d="M8 12l3 3 5-6" /></svg><span>Erkennen</span>
+          </button>
+          <button class="tool" data-tool="room" title="Raum als Polygon (R)" aria-label="Raum als Polygon">
+            <svg viewBox="0 0 24 24"><path d="M4 5h10v5h6v9H4z" /><circle cx="4" cy="5" r="1.6" /><circle cx="14" cy="10" r="1.6" /><circle cx="20" cy="19" r="1.6" /></svg><span>Polygon</span>
+          </button>
+          <button class="tool" data-tool="rect" title="Raum als Rechteck (Q)" aria-label="Raum als Rechteck">
+            <svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" /></svg><span>Rechteck</span>
+          </button>
+          <span class="tool-sep"></span>
+          <button class="tool" data-tool="manifold" title="Heizkreisverteiler setzen (M)" aria-label="Verteiler setzen">
+            <svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="8" rx="1" /><path d="M7 16v4M11 16v4M15 16v4M19 16v4" /></svg><span>Verteiler</span>
+          </button>
+          <button class="tool" data-tool="route" title="Anbindeleitung führen (L)" aria-label="Anbindeleitung führen">
+            <svg viewBox="0 0 24 24"><path d="M4 20V10h8V4h8" /><path d="M7 20V13h8V7h5" /></svg><span>Leitung</span>
+          </button>
+          <button class="tool" data-tool="heatSource" title="Wärmeerzeuger setzen (G)" aria-label="Wärmeerzeuger setzen">
+            <svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M9 16c0-3 3-3 3-7 2 2 3 4 3 7a3 3 0 0 1-6 0z" /></svg><span>Erzeuger</span>
+          </button>
+          <span class="tool-sep"></span>
+          <button class="tool" data-tool="calibrate" title="Maßstab kalibrieren (K)" aria-label="Maßstab kalibrieren">
+            <svg viewBox="0 0 24 24"><path d="M3 16 16 3l5 5L8 21z" /><path d="M7 12l2 2M10 9l2 2M13 6l2 2" /></svg><span>Maßstab</span>
+          </button>
+          <button class="tool" data-tool="moveImage" title="Grundrissbild verschieben (B)" aria-label="Grundrissbild verschieben">
+            <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="1" /><path d="m3 16 5-5 4 4 3-3 6 6" /></svg><span>Bild</span>
+          </button>
+          <button class="tool" data-tool="measure" title="Messen (D)" aria-label="Messen">
+            <svg viewBox="0 0 24 24"><path d="M3 12h18M3 8v8M21 8v8M8 10v4M13 10v4M18 10v4" /></svg><span>Messen</span>
+          </button>
+        </nav>
+
+        <main class="stage">
+          <div class="tool-options" id="tool-options"></div>
+          <div class="canvas-host" id="canvas-host"></div>
+          <div class="zoom-ctl">
+            <button class="icon-btn" id="btn-zoom-in" aria-label="Vergrößern" title="Vergrößern (+)"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg></button>
+            <button class="icon-btn" id="btn-zoom-out" aria-label="Verkleinern" title="Verkleinern (−)"><svg viewBox="0 0 24 24"><path d="M5 12h14" /></svg></button>
+            <button class="icon-btn" id="btn-fit" aria-label="Einpassen" title="Einpassen (F)"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" /></svg></button>
+          </div>
+          <section class="results-drawer" id="results" hidden aria-label="Ergebnisse">
+            <div class="drawer-head">
+              <div class="tabs" role="tablist">
+                <button role="tab" data-tab="rooms">Räume &amp; Heizlast</button>
+                <button role="tab" data-tab="circuits">Heizkreise</button>
+                <button role="tab" data-tab="manifolds">Verteiler</button>
+                <button role="tab" data-tab="material">Material</button>
+              </div>
+              <div class="drawer-actions">
+                <button class="btn small" id="btn-csv">CSV exportieren</button>
+                <button class="icon-btn" id="btn-results-close" aria-label="Ergebnisse schließen"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></svg></button>
+              </div>
+            </div>
+            <div class="drawer-body" id="results-body"></div>
+          </section>
+        </main>
+
+        <aside class="sidebar" id="sidebar"></aside>
+      </div>
+
+      <footer class="statusbar">
+        <span class="hint" id="hint"></span>
+        <span class="toggles" id="toggles"></span>
+        <span class="coords" id="coords"></span>
+        <span class="saved" id="saved"></span>
+      </footer>
+    </div>
+    <div class="toasts" id="toasts" aria-live="polite"></div>
+    <input type="file" id="file-image" accept="image/png,image/jpeg,image/webp,image/svg+xml,image/gif" hidden />
+    <input type="file" id="file-project" accept=".json,application/json" hidden />
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
