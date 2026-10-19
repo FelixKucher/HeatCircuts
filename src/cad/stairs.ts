@@ -1,6 +1,6 @@
 // Treppen: Stufen als Polygone in Planlage, Umriss für den Deckendurchbruch.
 
-import type { Stair, Vec } from './model';
+import type { Stair, Vec } from '../model/types';
 
 export interface Tread {
   poly: Vec[];
@@ -98,4 +98,21 @@ export function stairGeometry(s: Stair, rise: number): StairGeometry {
     return { x: q.x + s.pos.x, y: q.y + s.pos.y };
   };
   return { treads: treads.map((t) => ({ poly: t.poly.map(T), z: t.z })), outline: outline.map(T), walkline: walk.map(T), riser: h, steps: n };
+}
+
+let sc = 0;
+export function newStair(type: Stair['type'], pos: Vec): Stair {
+  return {
+    id: `S${Date.now().toString(36)}${(sc++).toString(36)}`,
+    type,
+    pos: { ...pos },
+    angle: 0,
+    width: type === 'spiral' ? 1.6 : 1.0,
+    length: type === 'spiral' ? 1.6 : type === 'lshape' ? 2.5 : 3.6,
+    length2: 1.8,
+    steps: null,
+    clockwise: true,
+    color: '#b88a5a',
+    cutCeiling: true,
+  };
 }

@@ -1,7 +1,7 @@
 // Wandgeometrie: Gehrungen an Knoten, Umriss je Wand, Verbindungen und Öffnungslage.
 
-import type { Level, Opening, Vec, Wall } from './model';
-import { add, cross, dist, dot, len, mul, norm, sub } from '../../src/geometry/geom';
+import type { Floor, Opening, Vec, Wall } from '../model/types';
+import { add, cross, dist, dot, len, mul, norm, sub } from '../geometry/geom';
 
 export const JOIN_TOL = 0.02;
 const MAX_MITER = 3;
@@ -161,7 +161,7 @@ export function sideLengths(o: WallOutline): { left: number; right: number } {
   return { left: dist(o.poly[0], o.poly[1]), right: dist(o.poly[3], o.poly[2]) };
 }
 
-export function levelBounds(l: Level): { min: Vec; max: Vec } | null {
+export function floorContentBounds(l: Floor): { min: Vec; max: Vec } | null {
   const pts: Vec[] = [];
   for (const w of l.walls) pts.push(w.a, w.b);
   for (const r of l.rooms) pts.push(...r.polygon);

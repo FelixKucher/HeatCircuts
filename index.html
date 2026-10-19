@@ -6,13 +6,10 @@
     <title>HeatCircuits</title>
     <meta name="claude:viewport-fit-sides" content="cover" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Cpath d=%22M6 26V9a3 3 0 0 1 3-3h14a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H13a3 3 0 0 1-3-3v-8a3 3 0 0 1 3-3h6a3 3 0 0 1 3 3v4%22 fill=%22none%22 stroke=%22%23cc3a2b%22 stroke-width=%222.6%22 stroke-linecap=%22round%22/%3E%3C/svg%3E" />
-    <meta name="description" content="Planung von Fußbodenheizungen nach EN 12831 und EN 1264 – metrisch, °C, für Europa." />
+    <meta name="description" content="Haus zeichnen und Flächenheizung planen: Grundriss, Bauteile, Heizlast nach EN 12831, Heizkreise nach EN 1264 – metrisch, °C, für Europa." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
-    />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" />
   </head>
   <body>
     <div id="app">
@@ -24,110 +21,65 @@
           </svg>
           <span class="brand-name">Heat<b>Circuits</b></span>
         </div>
-        <button class="project-name" id="btn-project-name" title="Projekt- und Gebäudedaten bearbeiten"></button>
-        <span class="chip example" id="chip-example" hidden>Beispielprojekt</span>
+        <button class="project-name" id="btn-project-name" title="Gebäude, Klima und Bauteile bearbeiten"></button>
+        <span class="chip example" id="chip-example" hidden>Beispiel</span>
         <nav class="menu" aria-label="Hauptmenü">
           <div class="dropdown">
             <button class="btn ghost" id="btn-menu" aria-haspopup="true" aria-expanded="false">Projekt</button>
             <div class="dropdown-menu" id="menu-project" hidden>
-              <button data-cmd="new">Neues Projekt</button>
-              <button data-cmd="open">Projektdatei öffnen …</button>
-              <button data-cmd="save">Projektdatei speichern <kbd>⌘S</kbd></button>
+              <button data-cmd="new">Neues Projekt … <kbd>⌘N</kbd></button>
+              <button data-cmd="open">Öffnen … <kbd>⌘O</kbd></button>
+              <button data-cmd="save">Speichern <kbd>⌘S</kbd></button>
               <hr />
-              <button data-cmd="export-svg">Plan des Geschosses als SVG</button>
-              <button data-cmd="export-svg-bg">Plan mit Grundrissbild als SVG</button>
+              <button data-cmd="image">Grundrissbild laden …</button>
+              <button data-cmd="dxf">DXF-Grundriss laden …</button>
+              <hr />
+              <button data-cmd="export-svg">Plan als SVG</button>
+              <button data-cmd="export-svg-bg">Plan mit Vorlage als SVG</button>
+              <button data-cmd="export-dxf">Plan als DXF (AutoCAD, CADCraft)</button>
               <button data-cmd="export-png">3D-Ansicht als PNG</button>
-              <button data-cmd="export-csv">Ergebnistabellen als CSV</button>
+              <button data-cmd="export-glb">3D-Modell als GLB</button>
+              <button data-cmd="export-csv">Ergebnistabelle als CSV</button>
               <hr />
               <button data-cmd="sample">Beispielprojekt laden</button>
+              <button data-cmd="help">Tastenkürzel und Bedienung</button>
             </div>
           </div>
-          <button class="btn ghost wizard-btn" id="btn-wizard">Assistent</button>
           <button class="btn ghost" id="btn-building">Gebäude</button>
           <button class="btn ghost" id="btn-design">Auslegung</button>
-          <button class="btn ghost" id="btn-results" aria-pressed="false">Ergebnisse</button>
         </nav>
-        <div class="view-switch" role="group" aria-label="Ansicht">
-          <button data-view="plan" aria-pressed="true">Grundriss</button>
-          <button data-view="3d" aria-pressed="false" title="3D-Ansicht (Taste 3)">3D</button>
+        <ol class="phasebar" id="phasebar" aria-label="Arbeitsschritte"></ol>
+        <div class="view-switch" role="group" aria-label="Ansicht" id="layout-switch">
+          <button data-layout="plan" aria-pressed="false" title="Nur Grundriss (1)">Plan</button>
+          <button data-layout="split" aria-pressed="true" title="Grundriss und 3D (2)">Geteilt</button>
+          <button data-layout="3d" aria-pressed="false" title="Nur 3D (3)">3D</button>
         </div>
         <div class="undo">
-          <button class="icon-btn" id="btn-undo" title="Rückgängig (⌘Z)" aria-label="Rückgängig">
-            <svg viewBox="0 0 24 24"><path d="M9 7 4 12l5 5M4 12h11a5 5 0 0 1 0 10h-2" /></svg>
-          </button>
-          <button class="icon-btn" id="btn-redo" title="Wiederholen (⇧⌘Z)" aria-label="Wiederholen">
-            <svg viewBox="0 0 24 24"><path d="m15 7 5 5-5 5M20 12H9a5 5 0 0 0 0 10h2" /></svg>
-          </button>
+          <button class="icon-btn" id="btn-undo" title="Rückgängig (⌘Z)" aria-label="Rückgängig"><svg viewBox="0 0 24 24"><path d="M9 7 4 12l5 5M4 12h11a5 5 0 0 1 0 10h-2" /></svg></button>
+          <button class="icon-btn" id="btn-redo" title="Wiederholen (⇧⌘Z)" aria-label="Wiederholen"><svg viewBox="0 0 24 24"><path d="m15 7 5 5-5 5M20 12H9a5 5 0 0 0 0 10h2" /></svg></button>
+          <button class="icon-btn" id="btn-theme" title="Hell / Dunkel" aria-label="Farbschema wechseln"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z" /></svg></button>
         </div>
         <div class="summary" id="summary" aria-live="polite"></div>
       </header>
 
       <div class="workspace">
-        <nav class="toolbar" aria-label="Werkzeuge">
-          <button class="tool" data-tool="select" title="Auswählen (V)" aria-label="Auswählen">
-            <svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 1.5L10 19z" /></svg><span>Wahl</span>
-          </button>
-          <button class="tool" data-tool="pan" title="Ansicht verschieben (H, Leertaste)" aria-label="Ansicht verschieben">
-            <svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3l-3 3m3-3 3 3M12 21l-3-3m3 3 3-3M3 12l3-3m-3 3 3 3M21 12l-3-3m3 3-3 3" /></svg><span>Ansicht</span>
-          </button>
-          <span class="tool-sep"></span>
-          <button class="tool" data-tool="wall" title="Wand zeichnen (W)" aria-label="Wand zeichnen">
-            <svg viewBox="0 0 24 24"><path d="M3 20V8h8V4h10v16z" class="fillish" /></svg><span>Wand</span>
-          </button>
-          <button class="tool" data-tool="detect" title="Raum per Klick erkennen (E)" aria-label="Raum erkennen">
-            <svg viewBox="0 0 24 24"><path d="M3 3h18v18H3z" /><path d="M8 12l3 3 5-6" /></svg><span>Erkennen</span>
-          </button>
-          <button class="tool" data-tool="room" title="Raum als Polygon (R)" aria-label="Raum als Polygon">
-            <svg viewBox="0 0 24 24"><path d="M4 5h10v5h6v9H4z" /><circle cx="4" cy="5" r="1.6" /><circle cx="14" cy="10" r="1.6" /><circle cx="20" cy="19" r="1.6" /></svg><span>Polygon</span>
-          </button>
-          <button class="tool" data-tool="rect" title="Raum als Rechteck (Q)" aria-label="Raum als Rechteck">
-            <svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" /></svg><span>Rechteck</span>
-          </button>
-          <span class="tool-sep"></span>
-          <button class="tool" data-tool="opening" title="Fenster / Tür setzen (O)" aria-label="Fenster oder Tür setzen">
-            <svg viewBox="0 0 24 24"><path d="M3 12h4M17 12h4" class="thick"/><path d="M7 12a10 10 0 0 1 10-10M7 12h10"/></svg><span>Öffnung</span>
-          </button>
-          <button class="tool" data-tool="stair" title="Treppe / Deckenöffnung (T)" aria-label="Treppe">
-            <svg viewBox="0 0 24 24"><rect x="6" y="3" width="12" height="18"/><path d="M6 7h12M6 11h12M6 15h12M12 19V6m-2 2 2-2 2 2"/></svg><span>Treppe</span>
-          </button>
-          <button class="tool" data-tool="spiral" title="Spindeltreppe (S)" aria-label="Spindeltreppe">
-            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="1.5"/><path d="M12 12 21 12M12 12l6.4 6.4M12 12v9M12 12l-6.4 6.4M12 12H3"/></svg><span>Spindel</span>
-          </button>
-          <button class="tool" data-tool="void" title="Luftraum (U)" aria-label="Luftraum">
-            <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16"/><path d="M4 4l16 16M20 4 4 20"/></svg><span>Luftraum</span>
-          </button>
-          <span class="tool-sep"></span>
-          <button class="tool" data-tool="manifold" title="Heizkreisverteiler setzen (M)" aria-label="Verteiler setzen">
-            <svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="8" rx="1" /><path d="M7 16v4M11 16v4M15 16v4M19 16v4" /></svg><span>Verteiler</span>
-          </button>
-          <button class="tool" data-tool="route" title="Anbindeleitung führen (L)" aria-label="Anbindeleitung führen">
-            <svg viewBox="0 0 24 24"><path d="M4 20V10h8V4h8" /><path d="M7 20V13h8V7h5" /></svg><span>Leitung</span>
-          </button>
-          <button class="tool" data-tool="heatSource" title="Wärmeerzeuger setzen (G)" aria-label="Wärmeerzeuger setzen">
-            <svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M9 16c0-3 3-3 3-7 2 2 3 4 3 7a3 3 0 0 1-6 0z" /></svg><span>Erzeuger</span>
-          </button>
-          <span class="tool-sep"></span>
-          <button class="tool" data-tool="calibrate" title="Maßstab kalibrieren (K)" aria-label="Maßstab kalibrieren">
-            <svg viewBox="0 0 24 24"><path d="M3 16 16 3l5 5L8 21z" /><path d="M7 12l2 2M10 9l2 2M13 6l2 2" /></svg><span>Maßstab</span>
-          </button>
-          <button class="tool" data-tool="moveImage" title="Grundrissbild verschieben (B)" aria-label="Grundrissbild verschieben">
-            <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="1" /><path d="m3 16 5-5 4 4 3-3 6 6" /></svg><span>Bild</span>
-          </button>
-          <button class="tool" data-tool="measure" title="Messen (D)" aria-label="Messen">
-            <svg viewBox="0 0 24 24"><path d="M3 12h18M3 8v8M21 8v8M8 10v4M13 10v4M18 10v4" /></svg><span>Messen</span>
-          </button>
-        </nav>
-
-        <main class="stage" id="stage">
-          <div class="tool-options" id="tool-options"></div>
-          <div class="canvas-host" id="canvas-host"></div>
-          <div class="view3d-host" id="view3d-host" hidden></div>
-          <div class="view3d-ctl" id="view3d-ctl" hidden></div>
-          <div class="zoom-ctl">
-            <button class="icon-btn" id="btn-zoom-in" aria-label="Vergrößern" title="Vergrößern (+)"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg></button>
-            <button class="icon-btn" id="btn-zoom-out" aria-label="Verkleinern" title="Verkleinern (−)"><svg viewBox="0 0 24 24"><path d="M5 12h14" /></svg></button>
-            <button class="icon-btn" id="btn-fit" aria-label="Einpassen" title="Einpassen (F)"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" /></svg></button>
-          </div>
+        <nav class="toolbar" id="toolbar" aria-label="Werkzeuge"></nav>
+        <aside class="leftpanel" id="leftpanel" aria-label="Katalog"></aside>
+        <main class="stage" id="stage" data-layout="split">
+          <div class="levels" id="levels"></div>
+          <div class="tool-options" id="tool-options" hidden></div>
+          <section class="plan-host" id="plan-host">
+            <div class="zoom-ctl">
+              <button class="icon-btn" id="btn-zoom-in" aria-label="Vergrößern" title="Vergrößern (+)"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg></button>
+              <button class="icon-btn" id="btn-zoom-out" aria-label="Verkleinern" title="Verkleinern (−)"><svg viewBox="0 0 24 24"><path d="M5 12h14" /></svg></button>
+              <button class="icon-btn" id="btn-fit" aria-label="Einpassen" title="Einpassen (F)"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" /></svg></button>
+            </div>
+            <div class="compass" id="compass" title="Norden"><svg viewBox="-20 -20 40 40"><path d="M0 -16 L6 2 L0 -2 L-6 2Z" class="cmp-n"/><path d="M0 16 L6 -2 L0 2 L-6 -2Z" class="cmp-s"/><text y="-9" class="cmp-t" transform="translate(0 -3)">N</text></svg></div>
+          </section>
+          <div class="splitter" id="splitter" title="Ziehen, um die Aufteilung zu ändern"></div>
+          <section class="view-host" id="view-host">
+            <div class="view3d-ctl" id="view3d-ctl"></div>
+          </section>
           <section class="results-drawer" id="results" hidden aria-label="Ergebnisse">
             <div class="drawer-head">
               <div class="tabs" role="tablist">
@@ -145,20 +97,19 @@
             <div class="drawer-body" id="results-body"></div>
           </section>
         </main>
-
-        <aside class="sidebar" id="sidebar"></aside>
+        <aside class="sidebar" id="sidebar" aria-label="Eigenschaften"></aside>
       </div>
 
       <footer class="statusbar">
         <span class="hint" id="hint"></span>
-        <span class="toggles" id="toggles"></span>
         <span class="coords" id="coords"></span>
         <span class="saved" id="saved"></span>
       </footer>
     </div>
-    <div class="toasts" id="toasts" aria-live="polite"></div>
-    <input type="file" id="file-image" accept="image/png,image/jpeg,image/webp,image/svg+xml,image/gif" hidden />
-    <input type="file" id="file-project" accept=".json,application/json" hidden />
-    <script type="module" src="./src/main.ts"></script>
+    <div id="toasts" class="toasts" aria-live="polite"></div>
+    <input type="file" id="file-image" accept="image/*" hidden />
+    <input type="file" id="file-dxf" accept=".dxf" hidden />
+    <input type="file" id="file-project" accept=".json,.hauscad,application/json" hidden />
+    <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

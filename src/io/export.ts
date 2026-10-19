@@ -1,10 +1,21 @@
 import type { Floor, ImageStore, Project } from '../model/types';
 import type { DesignResult } from '../calc/design';
 import { backgroundMarkup, floorBounds, renderLayers, SVG_DEFS } from '../ui/render';
+import { PLAN_DEFS, planBaseSvg } from '../ui/plan-render';
 import { esc, level, num } from '../ui/format';
 
 // Feste Farben für den Plan-Export (unabhängig vom Bildschirmthema)
 const EXPORT_CSS = `
+.p-wall{fill:url(#p-hatch);stroke:none}.p-hatch-bg{fill:#fff}.p-hatch-ln{stroke:#555;stroke-width:.012}
+.p-edge{stroke:#1d2a35;stroke-width:.025;stroke-linecap:square}
+.p-room{fill:#e8eef3;fill-opacity:.45;stroke:none}.p-room.unheated{fill:#f1f1ef}.p-room.warn{fill:#f6e2d8}
+.p-room-name{font-weight:600}.p-room-area{fill:#45525d}
+.p-op-gap{fill:#fff}.p-op-reveal,.p-op-win{stroke:#1d2a35;stroke-width:.015}.p-op-glass{stroke:#2d64c8;stroke-width:.008}.p-op-leaf{stroke:#1d2a35;stroke-width:.02}.p-op-arc,.p-op-sill{fill:none;stroke:#1d2a35;stroke-width:.008}.p-op-slide{fill:#fff;stroke:#1d2a35;stroke-width:.008}.p-op-garage{stroke:#1d2a35;stroke-width:.01}.p-dashed{stroke-dasharray:.06 .04}.p-hit,.p-hit-line{display:none}
+.p-fur .p-fur-bg{fill:#fff;fill-opacity:.7}.p-sym{fill:none;stroke:#5b6670;stroke-width:.01}.sym-t{font-size:.12px;fill:#5b6670;stroke:none}.fill-dark{fill:#5b6670}
+.p-tread{fill:#fff;stroke:#45525d;stroke-width:.01}.p-stair-bg{fill:#fff}.p-walkline{fill:none;stroke:#45525d;stroke-width:.01}.p-walk-start,.p-arrow-head{fill:#45525d}
+.p-void polygon{fill:none;stroke:#8a9399;stroke-width:.012;stroke-dasharray:.08 .05}.p-void line{stroke:#8a9399;stroke-width:.008}
+.p-dim-line,.p-dim-ext{stroke:#45525d;stroke-width:.008}.p-dim-tick{stroke:#45525d;stroke-width:.016}.p-dim-text{fill:#1d2a35}
+.p-ghost{display:none}.p-label{text-anchor:start}
 .room{fill:#e8eef3;fill-opacity:.55;stroke:#1d2a35;stroke-width:.02}
 .room-warn{fill:#f6e2d8}
 .room-unheated{fill:#f1f1ef;stroke:#8a9399;stroke-width:.02;stroke-dasharray:.1 .06}
@@ -41,6 +52,7 @@ export function exportFloorSvg(project: Project, floor: Floor, design: DesignRes
   const h = b.max.y - b.min.y + 2 * pad + 1.4;
   const scale = 50;
   const L = renderLayers({ project, floor, design, images, scale, selection: null, showCircuits: true, showLabels: true, ghost: null });
+  const base = planBaseSvg({ project, floor, design, scale, sel: [], phase: 'circuits', ghost: null });
   const date = new Date().toLocaleDateString('de-DE');
   const ty = b.max.y + pad + 0.5;
   const title = `<g class="title-block">
@@ -50,10 +62,10 @@ export function exportFloorSvg(project: Project, floor: Floor, design: DesignRes
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="${minX} ${minY} ${w} ${h}" width="${Math.round(w * scale)}" height="${Math.round(h * scale)}">
 <style>${EXPORT_CSS}</style>
-${SVG_DEFS}
+${SVG_DEFS}${PLAN_DEFS}
 <rect x="${minX}" y="${minY}" width="${w}" height="${h}" fill="#ffffff"/>
 ${withBackground ? backgroundMarkup(floor, images) : ''}
-<g>${L.rooms}${L.voids}${L.circuits}${L.feeders}${L.walls}${L.openings}${L.objects}${L.labels}</g>
+<g>${base.under}${L.heatAreas}${L.circuits}${L.feeders}${base.walls}${L.wallHeat}${base.over}${L.objects}${L.labels}</g>
 ${title}
 </svg>`;
 }

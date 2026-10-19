@@ -211,10 +211,10 @@ describe('Heizlast und Auslegung', () => {
     for (const c of on.circuits) expect(c.length).toBeLessThanOrEqual(p.design.maxCircuitLength + 1e-6);
   });
 
-  it('Migration v1 → v2', () => {
+  it('Migration v1 → v3', () => {
     const v1 = { version: 1, name: 'Alt', floors: [{ id: 'f', name: 'EG', elevation: 0, storeyHeight: 2.9, clearHeight: 2.5, background: null, walls: [{ id: 'w', a: v(0, 0), b: v(1, 0), thickness: 0.3, kind: 'exterior' }], rooms: [{ id: 'r', name: 'R', type: 'wohnen', polygon: [], heated: true, spacing: 0.1, pattern: 'meander' }], manifolds: [], routes: [] }] };
     const p = migrateProject(v1);
-    expect(p.version).toBe(2);
+    expect(p.version).toBe(3);
     expect(p.floors[0].walls[0].openings).toEqual([]);
     expect(p.floors[0].rooms[0].surfaces[0].spacing).toBe(0.1);
     expect(p.floors[0].rooms[0].surfaces[0].pattern).toBe('meander');

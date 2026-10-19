@@ -1,62 +1,85 @@
 # HeatCircuits
 
-Planungssoftware für Flächenheizungen, inspiriert von LoopCAD und auf Europa ausgerichtet:
-metrische Einheiten, °C, Heizlast in Anlehnung an **EN 12831-1 / DIN/TS 12831-1**, Erdreich nach **EN ISO 13370**,
-U-Werte nach **EN ISO 6946** und Auslegung nach **EN 1264-2/-3/-5**.
-Die App läuft vollständig im Browser, ohne Server und ohne Konto.
+Haus zeichnen und Flächenheizung planen in einer Anwendung – auf Europa ausgerichtet, mit metrischen Einheiten und °C. Die Berechnung folgt diesen Normen:
 
-**Neu: [HausCAD](cad/README.md)** – eigenständiges Haus-CAD (Wände, Räume, Türen, Fenster, Treppen, Möbel, 2D + 3D) mit Übergabe an HeatCircuits: `npm run cad:dev`.
+- **Heizlast** in Anlehnung an **EN 12831-1 / DIN/TS 12831-1**;
+- **Erdreich** nach **EN ISO 13370**;
+- **U-Werte** nach **EN ISO 6946**;
+- **Auslegung** nach **EN 1264-2/-3/-5**.
+
+Ein CAD-Grundriss in der Art von Sweet Home 3D und RoomSketcher und die Heizungsplanung teilen sich ein Datenmodell. Spätere Änderungen am Grundriss bleiben daher mit allen Bauteil- und Heizungsangaben verbunden. Die App läuft vollständig im Browser, ohne Server und ohne Konto.
 
 ## Ablauf
 
-Der **Planungsassistent** führt durch acht Schritte:
+**Projekt › Neues Projekt** startet den Assistenten:
 
-1. **Projekt und Standort.** Norm-Außentemperatur und Jahresmittel für DE, AT, CH und weitere EU-Städte.
-2. **Gebäude.** Das Baujahr setzt Schichtaufbauten, Fenster und Wärmebrückenzuschlag (11 Baualtersklassen). Dazu kommen Außenwand, Bodenplatte bzw. Kellerdecke und Dach mit Dämmebene.
-3. **Geschosse.** Vorlagen von EG bis Keller + EG + OG oder Dachgeschoss, mit Höhen und erdberührten Geschossen.
-4. **Heizsystem.** Zur Wahl stehen Nasssystem, Fräs-System, Trockensystem und Elektro-Heizmatte. Die zulässigen Verlegeabstände (7,5 / 10 / 12,5 / 15 / 17,5 / 20 cm, erweiterbar) und die Ziel-Vorlauftemperatur werden hier festgelegt.
-5. **Grundrisse.** Bild laden und den Maßstab über zwei Punkte mit bekanntem Abstand kalibrieren. Danach erkennt die App **Räume, Wände, Türen und Fenster automatisch**.
-6. **Räume prüfen.** Raumart (Temperatur, Luftwechsel, Belag, Abstand) und Heizsystem je Raum.
-7. **Verteiler setzen.** Danach werden die Heizkreise **automatisch erzeugt**: Raumzuordnung mit Kapazitätsgrenze, Leitungsführung um Wände und durch Türen, Verlegeabstände aus der zulässigen Liste.
-8. **Ergebnis.** Kennzahlen, Tabellen und 3D-Ansicht.
+1. **Gebäudeart:** Einfamilienhaus, Bungalow, Stadtvilla, Doppelhaushälfte, Reihenend- oder Reihenmittelhaus, Mehrfamilienhaus oder Wohnung (Erdgeschoss, Zwischengeschoss oder Dachgeschoss). Angebaute Seiten werden zu Haustrennwänden.
+2. **Ausrichtung:** Nordrichtung über eine Windrose. Dazu Gelände eben oder am Hang (Bergseite, Anstieg).
+3. **Standort:** Klick auf die Karte (D-A-CH oder Europa) und Höhe über NN. Norm-Außentemperatur und Jahresmittel werden aus den vier nächsten Klimastationen interpoliert (inverse Distanzgewichtung) und mit 0,5 K je 100 m auf die Höhe umgerechnet.
+4. **Gebäude:** Baujahr (11 Baualtersklassen setzen Aufbauten, Fenster und Wärmebrückenzuschlag), Geschossvorlagen, Dach.
+5. **Heizung:**
+   - Wärmeerzeuger: Luft- oder Sole-Wärmepumpe, Gas, Öl, Pellet, Fernwärme oder Sonstiges. Daraus folgt der Ziel-Vorlauf (Richtwert).
+   - Fußbodensystem: Nass, Fräs, Trocken oder Elektro.
+   - zulässige Verlegeabstände.
+6. **Einstieg:** direkt zeichnen, Grundrissbild übernehmen, DXF laden oder das Beispielhaus öffnen.
 
-## Funktionen
+Danach führen fünf **Arbeitsphasen** durch das Projekt (Leiste oben, ⇧1 – ⇧5). Jede Phase hat eigene Werkzeuge, Eigenschaften und einen Leitfaden mit offenen Punkten:
 
-| Bereich | Umfang |
+| Phase | Inhalt |
 | --- | --- |
-| Bauteile | Baustoffbibliothek (40 Materialien), Schichtaufbauten mit U-Wert nach EN ISO 6946, Vorlagen je Baualtersklasse, Fenstertypen |
-| Zeichnen | Wände entlang der Achse mit Längeneingabe, Fenster, Türen, Außentüren und Garagentore als Wandöffnungen, gerade Treppen, Spindeltreppen und Lufträume als Deckenöffnungen |
-| Räume | Erkennung per Klick oder aus dem Grundrissbild, Polygon, Rechteck; Garage im Haus, unbeheizter Keller und Dachboden mit Temperatur-Korrekturfaktor b_u |
-| Heizflächen | mehrere je Raum: Fußboden (Nass, Fräs, Trocken, Elektro), Wandheizung (Putz, Trockenbau), Deckenheizung (Putz, Gipskarton) |
-| Verlegung | Schnecke (bifilar) oder Mäander; Ecken mit Mindestbiegeradius 5 × D, enge 180°-Umlenkungen als Omega-Bogen; Aussparung von Treppenlöchern |
-| Wandansicht | Doppelklick auf eine Wand: Abwicklung von der Raumseite mit Öffnungen, verschiebbaren Heizfeldern und Rohrbahnen um Fenster |
-| Hanglage | Gelände als geneigte Ebene (Bergseite, Anstieg); Erdanschüttung je Außenwand automatisch oder von Hand, erdberührte Wandanteile nach EN ISO 13370 |
-| 3D | Wände mit Öffnungen, Böden mit Treppenlöchern, Heizkreise, Wand- und Deckenheizflächen, Treppen, Sattel-, Walm-, Pult- und Flachdach mit Kniestock |
-| Leitungen | Anbindeleitungen Raum → Verteiler (automatisch per A* oder manuell), Verteiler → Wärmeerzeuger inkl. Steigleitung |
-| Ergebnisse | Heizlast je Bauteil und Nachbarfläche, Heizflächen, Heizkreise mit Druckverlust und Abgleich, Verteiler, Materialliste (Rohr je Typ, Rollen, Heizmatten, Randdämmstreifen) |
-| Export | Projektdatei (JSON inkl. Bilder), Plan als SVG, 3D-Ansicht als PNG, Tabellen als CSV (Semikolon, Dezimalkomma); Autosave im Browser |
+| 1 Grundriss | Raum aufziehen (Wände und Raum in einem Zug, gemeinsame Wände werden nicht verdoppelt), Wände mit Gehrung und Längeneingabe, Raumpolygon und Raumerkennung per Doppelklick, Türen und Fenster in 8 Arten, Treppen (gerade, L, Spindel) mit automatischem Deckendurchbruch, Lufträume, rund 45 Möbel mit Wandmagnetismus, Bemaßung, Texte, Grundrissbild mit Kalibrierung und Raumerkennung, DXF als Vektorvorlage |
+| 2 Bauteile | Wandart automatisch aus den Räumen (Außen-, Innen-, Trennwand, Wand zu unbeheizt) oder von Hand, **eigener Schichtaufbau je Wand, je Boden und je Decke**, U-Wert je Fenster und Tür, Raumart, Temperatur, Luftwechsel, Boden- und Deckenbegrenzung (auch Nachbarwohnung), Erdanschüttung am Hang |
+| 3 Heizflächen | je Raum Fußboden-, Wand- und Deckenheizung (Nass, Fräs, Trocken, Elektro, Putz, Trockenbau), Wandansicht per Doppelklick, Bilanz Heizlast ↔ Leistung |
+| 4 Heizkreise | Verteiler und Wärmeerzeuger setzen, automatische Verteilung mit gleichen Kreislängen, Anbindeleitungen von Hand, Anschlusspunkte |
+| 5 Ergebnisse | Tabellen (Räume, Heizflächen, Kreise, Verteiler, Material), Export |
+
+**Format übertragen** (Y) kopiert Eigenschaften von einem Bauteil auf weitere. Was übertragen wird, hängt von der Phase ab:
+
+- **Grundriss:** Darstellung und Maße;
+- **Bauteile:** Art, Aufbau und U-Werte;
+- **Heizflächen:** Heizflächen und Belag.
+
+Plan und 3D-Ansicht stehen geteilt nebeneinander (1 / 2 / 3). Die 3D-Ansicht bietet:
+
+- Luftbild und Rundgang (W A S D);
+- Schatten, Bodentexturen, Möbel und Dach;
+- Gelände mit Hang;
+- in den Heizungsphasen Heizkreise sowie Wand- und Deckenheizfelder.
+
+## Austausch
+
+| Format | Richtung |
+| --- | --- |
+| Projektdatei `.heatcircuits.json` | Öffnen und Speichern, Autosave im Browser (IndexedDB) |
+| HausCAD-Datei `.hauscad` | Öffnen (ältere Dateien des früheren eigenständigen HausCAD) |
+| DXF | lesen als maßstäbliche Vektorvorlage (LINE, LWPOLYLINE, POLYLINE, ARC, CIRCLE, TEXT, INSERT; Einheit aus `$INSUNITS`), schreiben als DXF R12 in Metern mit Layern – für AutoCAD und [CADCraft](https://github.com/storytold/cadcraft) |
+| SVG | Plan des Geschosses mit Heizkreisen, mit oder ohne Vorlage |
+| PNG, GLB | 3D-Ansicht bzw. 3D-Modell |
+| CSV | Ergebnistabellen (Semikolon, Dezimalkomma) |
+
+DWG wird nicht direkt gelesen und muss vorher nach DXF gewandelt werden, z. B. mit CADCraft oder dem ODA File Converter.
 
 ## Tastenkürzel
 
-| Taste | Werkzeug |
+| Taste | Funktion |
 | --- | --- |
-| V / H | Auswählen / Ansicht verschieben (auch Leertaste) |
-| W | Wand (Länge eintippen + Enter, Shift hebt Ortho auf) |
-| E / R / Q | Raum erkennen / Polygon / Rechteck |
-| O | Fenster, Tür oder Tor auf eine Wand setzen |
-| T / S / U | Treppe / Spindeltreppe / Luftraum |
-| M / L / G | Verteiler / Anbindeleitung / Wärmeerzeuger |
-| K / B / D | Maßstab kalibrieren / Bild verschieben / Messen |
-| 3 | Grundriss ↔ 3D |
-| F, + / − | Einpassen, Zoom |
+| ⇧1 – ⇧5 | Arbeitsphase |
+| V / H | Auswählen / Ansicht verschieben (auch Leertaste, mittlere Maustaste) |
+| R / W / P | Raum aufziehen / Wand (Länge tippen + Enter) / Raumpolygon |
+| O / T / U | Öffnung / Treppe / Luftraum |
+| F / D / X / K | Möbel / Bemaßung / Text / Maßstab der Vorlage |
+| M / G / L | Verteiler / Wärmeerzeuger / Anbindeleitung |
+| Y / Q | Format übertragen / Auswahl um 90° drehen |
+| 1 / 2 / 3 | Plan / geteilt / 3D |
 | Bild ↑ / Bild ↓ | Geschoss wechseln |
-| ⌘/Strg + Z, ⇧⌘Z, ⌘/Strg + S | Rückgängig, Wiederholen, Speichern |
+| ⌘/Strg Z, ⇧Z, C, V, X, D, A, S, O, N | Rückgängig, Wiederholen, Kopieren, Einfügen, Ausschneiden, Duplizieren, Alles, Speichern, Öffnen, Neu |
 
 ## Rechenverfahren
 
 ### Heizlast (vereinfacht nach EN 12831-1)
 
-- **Transmission:** Φ_T = Σ A·(U + ΔU_WB)·b·(θ_int − θ_e).
+- **Transmission:** Φ_T = Σ A·(U + ΔU_WB)·b·(θ_int − θ_e). U je Bauteil aus dessen eigenem Aufbau, sonst aus dem Gebäudeaufbau; U je Fenster und Tür.
+- **Haus- und Wohnungstrennwände, Nachbarwohnungen:** A·U·(θ_int − θ_Nachbar) mit einer angenommenen Nachbartemperatur (Vorgabe 15 °C). Diese Annahme ist zu prüfen; maßgeblich ist der nationale Anhang.
   - Fenster- und Türflächen ergeben sich aus den gezeichneten Öffnungen.
   - Außenwandlängen werden entlang der Raumkontur ermittelt.
 - **Erdreich:** Φ = f_g1·A·U_equiv·G_w·(θ_int − θ_m,e), mit U_equiv nach EN ISO 13370 aus B′ = A/(0,5·P) und d_t. Für Keller gelten Kellerboden und Kellerwand bis zur Tiefe z.
@@ -109,11 +132,12 @@ npm run build:single   # eine eigenständige HTML-Datei in dist-single/ (läuft 
 
 ```
 src/
-  model/      Datenmodell, Stammdaten, Bauteile, Heizsysteme, Store (Undo/Redo), Beispielprojekt
-  geometry/   Polygone, Raster/Morphologie, Raum- und Grundrisserkennung, Verlegemuster, Rohrbögen, Heizfelder
-  calc/       Heizlast, EN 1264, Heizflächen, Hydraulik, Auslegung, automatische Verteilung
-  ui/         Editor, Darstellung, Seitenleiste, Dialoge, Assistent, Wandansicht, 3D (Three.js)
-  io/         Autosave (IndexedDB), Projektdatei, SVG-Export
+  model/      Datenmodell v3, Stammdaten, Bauteile, Heizsysteme, Normalisierung, Store (Undo/Redo, Phasen), Beispielprojekt, Europakarte
+  cad/        Wandgeometrie mit Gehrung, Bearbeiten, Öffnungen, Treppen, Möbelkatalog, Format übertragen
+  geometry/   Polygone, Raster/Morphologie, Raum- und Grundrisserkennung, Verlegemuster, Rohrbögen, Heizfelder, Gelände
+  calc/       Heizlast, EN 1264, Heizflächen, Hydraulik, Auslegung, automatische Verteilung, Klima-Interpolation
+  ui/         Planeditor, Plandarstellung, Eigenschaften, Bauteilaufbau, Dialoge, Assistent, Wandansicht, 3D (Three.js)
+  io/         Autosave (IndexedDB), Projektdatei, SVG-, DXF- und HausCAD-Austausch
 ```
 
 `dist/` ist eine rein statische Seite. Sie lässt sich z. B. auf Amazon S3 mit CloudFront (Origin Access Control) hosten oder mit Tauri als macOS-App verpacken.

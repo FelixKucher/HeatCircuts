@@ -8,7 +8,7 @@
 
 import type { BuildingData, Floor, Project, Room, Wall } from '../model/types';
 import { ROOM_TYPES } from '../model/catalog';
-import { layersResistance } from '../model/constructions';
+import { layersResistance, uValue } from '../model/constructions';
 import { area, collinearOverlap, dist, norm, sub, add, mul } from '../geometry/geom';
 import { footprint, inVoid, inWalls, roomAt, samplePolygon } from '../geometry/sampling';
 import { roomSpanOnWall } from '../geometry/wallfield';
@@ -39,6 +39,8 @@ export interface HeatLoadBreakdown {
   windowArea: number;
   doorArea: number;
   extWall: number;
+  /** Haustrennwände zum beheizten Nachbarn */
+  partyWalls: number;
   windows: number;
   unheatedWalls: number;
   floor: number;
@@ -70,6 +72,8 @@ export interface GroundParams {
   uBasementWall: number;
   /** wirksame Dicke der Außenwand d_w nach EN ISO 13370 */
   dw: number;
+  /** mittlere Außenwanddicke w */
+  wallThickness: number;
 }
 
 export function uSlabOnGround(bPrime: number, dt: number): number {
@@ -135,9 +139,16 @@ export function buildContext(project: Project): BuildingContext {
     isTop: (f) => idx.get(f.id) === sorted.length - 1,
     isLowest: (f) => idx.get(f.id) === 0,
     footprintInside: (f) => fp(f)?.inside ?? null,
-    ground: { area: A, perimeter: P, bPrime, dt, uSlab, z, uBasementWall: uBasementWall(z, dt, dw), dw },
+    ground: { area: A, perimeter: P, bPrime, dt, uSlab, z, uBasementWall: uBasementWall(z, dt, dw), dw, wallThickness: w },
     bounds,
   };
+}
+
+/** U_equiv der Bodenplatte für einen raumeigenen Bodenaufbau (Wärmedurchlasswiderstand R_f) */
+function groundU(ctx: BuildingContext, rf: number): number {
+  const g = ctx.ground;
+  const dt = g.wallThickness + LAMBDA_GROUND * (0.17 + rf + 0.04);
+  return g.z > 0 ? uBasementFloor(g.bPrime, dt, g.z) : uSlabOnGround(g.bPrime, dt);
 }
 
 // ---------- Kanten und Öffnungen ----------
@@ -176,6 +187,8 @@ export interface RoomOpening {
   wall: Wall;
   kind: string;
   area: number;
+  /** eigener U-Wert der Öffnung */
+  u: number | null;
 }
 
 /** Öffnungen in Wänden, die an den Raum grenzen (anteilig nach Überdeckung mit der Raumkante). */
@@ -191,7 +204,7 @@ export function openingsOfRoom(room: Room, walls: Wall[], kinds: Wall['kind'][] 
       let ov = 0;
       for (let i = 0; i < poly.length; i++) ov += collinearOverlap(poly[i], poly[(i + 1) % poly.length], p1, p2, w.thickness / 2 + 0.15);
       const frac = Math.min(1, ov / Math.max(o.width, 1e-6));
-      if (frac > 0.05) res.push({ wall: w, kind: o.kind, area: frac * o.width * o.height });
+      if (frac > 0.05) res.push({ wall: w, kind: o.kind, area: frac * o.width * o.height, u: o.uValue ?? null });
     }
   }
   return res;
@@ -221,6 +234,9 @@ export function roomHeatLoad(project: Project, room: Room, floor: Floor, ctx: Bu
   const ops = openingsOfRoom(room, floor.walls, ['exterior']);
   const winA = ops.filter((o) => o.kind === 'window').reduce((a, o) => a + o.area, 0) + Math.max(0, room.windowArea);
   const doorA = ops.filter((o) => o.kind === 'door' || o.kind === 'entrance' || o.kind === 'garage').reduce((a, o) => a + o.area, 0);
+  const site = project.site;
+  const thetaN = site?.neighbourTemp ?? 15;
+  const uWall = (w: Wall) => (w.construction?.layers.length ? uValue('extWall', w.construction.layers) : b.uExtWall);
   const grossExt = extLen * H;
   const netExt = Math.max(0, grossExt - winA - doorA);
   let extWall: number;
@@ -249,10 +265,24 @@ export function roomHeatLoad(project: Project, room: Room, floor: Floor, ctx: Bu
       const ew = hb > 0.02 ? F_G1 * buried * uBasementWall(hb, ctx.ground.dt, ctx.ground.dw) * G_W * (room.thetaI - b.thetaMeanYear) : 0;
       earthWallArea += buried;
       earthWall += ew;
-      extWall += above * (b.uExtWall + dU) * dT + ew;
+      extWall += above * (uWall(w) + dU) * dT + ew;
     }
   }
-  const windows = winA * (b.uWindow + dU) * dT + doorA * (b.uDoor + dU) * dT;
+  // Haustrennwände zum beheizten Nachbarhaus bzw. zur Nachbarwohnung
+  let partyWalls = 0;
+  for (const w of floor.walls) {
+    if (w.kind !== 'party') continue;
+    const span = roomSpanOnWall(w, room);
+    if (!span) continue;
+    const u = w.construction?.layers.length ? uValue('unheatedWall', w.construction.layers) : b.uPartyWall ?? 0.9;
+    partyWalls += (span.t1 - span.t0) * H * u * Math.max(0, room.thetaI - thetaN);
+  }
+  // Fenster und Türen mit eigenem U-Wert je Öffnung (sonst Gebäudewert)
+  let windows = Math.max(0, room.windowArea) * (b.uWindow + dU) * dT;
+  for (const o of ops) {
+    const u = o.u ?? (o.kind === 'window' ? b.uWindow : b.uDoor);
+    windows += o.area * (u + dU) * dT;
+  }
   const unheatedWalls = unhLen * H * (b.uUnheatedWall + dU) * B_UNHEATED_WALL_DEFAULT * dT;
 
   // Nachbarräume im Geschoss
@@ -274,6 +304,16 @@ export function roomHeatLoad(project: Project, room: Room, floor: Floor, ctx: Bu
   const above = ctx.above(floor);
   const aboveInside = above ? ctx.footprintInside(above) : null;
   const roof = project.roof;
+  // Aufbauten nur dieses Raums (sonst Gebäudewerte)
+  const fc = room.floorConstruction?.layers.length ? room.floorConstruction.layers : null;
+  const cc = room.ceilingConstruction?.layers.length ? room.ceilingConstruction.layers : null;
+  const uSlab = fc ? groundU(ctx, layersResistance(fc)) : ctx.ground.uSlab;
+  const uFloorUnheated = fc ? uValue('basementSlab', fc) : b.uUnheatedSlab;
+  const uRoof = cc ? uValue('roof', cc) : b.uRoof;
+  const uTop = cc ? uValue('topSlab', cc) : b.uTopSlab;
+  const isFlat = site?.houseType === 'whg';
+  const neighborBelow = isFlat && site.unitPosition !== 'ground';
+  const neighborAbove = isFlat && site.unitPosition !== 'top';
   const slopeFactor = roof.type === 'flat' || roof.type === 'none' ? 1 : 1 / Math.cos((Math.min(75, Math.max(0, roof.pitch)) * Math.PI) / 180);
   let voidArea = 0;
 
@@ -283,58 +323,63 @@ export function roomHeatLoad(project: Project, room: Room, floor: Floor, ctx: Bu
     else if (room.floorBoundary !== 'auto') {
       floorLossFixed(room.floorBoundary);
     } else if (!below) {
-      if (b.basement === 'unheated' && !floor.belowGrade) addPart(floorParts, 'Kellerdecke', cell, cell * (b.uUnheatedSlab + dU) * 0.5 * dT);
-      else addPart(floorParts, 'Erdreich', cell, F_G1 * cell * ctx.ground.uSlab * G_W * (room.thetaI - b.thetaMeanYear));
+      if (neighborBelow) floorLossFixed('neighbor');
+      else if (b.basement === 'unheated' && !floor.belowGrade) addPart(floorParts, 'Kellerdecke', cell, cell * (uFloorUnheated + dU) * 0.5 * dT);
+      else addPart(floorParts, 'Erdreich', cell, F_G1 * cell * uSlab * G_W * (room.thetaI - b.thetaMeanYear));
     } else {
       const r = roomAt(p, below.rooms);
       if (inVoid(p, below.voids)) {
         // offener Luftraum darunter – kein Verlust
       } else if (r && !r.heated) {
-        addPart(floorParts, `über ${r.name}`, cell, cell * (b.uUnheatedSlab + dU) * bOf(r) * dT);
+        addPart(floorParts, `über ${r.name}`, cell, cell * (uFloorUnheated + dU) * bOf(r) * dT);
       } else if (r && r.thetaI < room.thetaI) {
         addPart(floorParts, `über ${r.name}`, cell, cell * U_INTERIOR_SLAB * (room.thetaI - r.thetaI));
       } else if (!r && !inWalls(p, below.walls) && !(ctx.footprintInside(below)?.(p) ?? true)) {
-        addPart(floorParts, 'gegen Außenluft', cell, cell * (b.uUnheatedSlab + dU) * dT);
+        addPart(floorParts, 'gegen Außenluft', cell, cell * (uFloorUnheated + dU) * dT);
       }
     }
     // --- Decke ---
     if (room.ceilingBoundary !== 'auto') {
       ceilingLossFixed(room.ceilingBoundary);
     } else if (!above) {
-      topCeiling();
+      if (neighborAbove) ceilingLossFixed('neighbor');
+      else topCeiling();
     } else {
       const r = roomAt(p, above.rooms);
       if (inVoid(p, above.voids)) {
         // Treppe/Luftraum nach oben offen
       } else if (r && !r.heated) {
         const isAttic = r.type === 'dachboden';
-        addPart(ceilingParts, `unter ${r.name}`, cell, cell * ((isAttic ? b.uTopSlab : b.uUnheatedSlab) + dU) * bOf(r) * dT);
+        addPart(ceilingParts, `unter ${r.name}`, cell, cell * ((isAttic ? uTop : cc ? uTop : b.uUnheatedSlab) + dU) * bOf(r) * dT);
       } else if (r && r.thetaI < room.thetaI) {
         addPart(ceilingParts, `unter ${r.name}`, cell, cell * U_INTERIOR_SLAB * (room.thetaI - r.thetaI));
       } else if (!r && !inWalls(p, above.walls) && !(aboveInside?.(p) ?? true)) {
-        topCeiling();
+        if (neighborAbove) ceilingLossFixed('neighbor');
+        else topCeiling();
       }
     }
 
     function topCeiling() {
       if (roof.type === 'none' || roof.type === 'flat' || roof.insulation === 'rafters') {
-        addPart(ceilingParts, roof.type === 'flat' || roof.type === 'none' ? 'Flachdach' : 'Dachschräge', cell, cell * slopeFactor * (b.uRoof + dU) * dT);
-      } else addPart(ceilingParts, 'oberste Geschossdecke', cell, cell * (b.uTopSlab + dU) * B_TOP_SLAB * dT);
+        addPart(ceilingParts, roof.type === 'flat' || roof.type === 'none' ? 'Flachdach' : 'Dachschräge', cell, cell * slopeFactor * (uRoof + dU) * dT);
+      } else addPart(ceilingParts, 'oberste Geschossdecke', cell, cell * (uTop + dU) * B_TOP_SLAB * dT);
     }
     function floorLossFixed(kind: Room['floorBoundary']) {
-      if (kind === 'ground') addPart(floorParts, 'Erdreich', cell, F_G1 * cell * ctx.ground.uSlab * G_W * (room.thetaI - b.thetaMeanYear));
-      else if (kind === 'unheated') addPart(floorParts, 'gegen unbeheizt', cell, cell * (b.uUnheatedSlab + dU) * 0.5 * dT);
-      else if (kind === 'outside') addPart(floorParts, 'gegen Außenluft', cell, cell * (b.uUnheatedSlab + dU) * dT);
+      if (kind === 'ground') addPart(floorParts, 'Erdreich', cell, F_G1 * cell * uSlab * G_W * (room.thetaI - b.thetaMeanYear));
+      else if (kind === 'unheated') addPart(floorParts, 'gegen unbeheizt', cell, cell * (uFloorUnheated + dU) * 0.5 * dT);
+      else if (kind === 'outside') addPart(floorParts, 'gegen Außenluft', cell, cell * (uFloorUnheated + dU) * dT);
+      else if (kind === 'neighbor') addPart(floorParts, 'über Nachbarwohnung', cell, cell * U_INTERIOR_SLAB * Math.max(0, room.thetaI - thetaN));
     }
     function ceilingLossFixed(kind: Room['ceilingBoundary']) {
       if (kind === 'roof') topCeiling();
-      else if (kind === 'unheated') addPart(ceilingParts, 'gegen unbeheizt', cell, cell * (b.uTopSlab + dU) * B_TOP_SLAB * dT);
+      else if (kind === 'unheated') addPart(ceilingParts, 'gegen unbeheizt', cell, cell * (uTop + dU) * B_TOP_SLAB * dT);
+      else if (kind === 'neighbor') addPart(ceilingParts, 'unter Nachbarwohnung', cell, cell * U_INTERIOR_SLAB * Math.max(0, room.thetaI - thetaN));
     }
   }
 
   const floorLoss = Object.values(floorParts).reduce((a, x) => a + x.loss, 0);
   const ceiling = Object.values(ceilingParts).reduce((a, x) => a + x.loss, 0);
-  const transmission = Math.max(0, extWall + windows + unheatedWalls + floorLoss + ceiling + interior);
+  const transmission = Math.max(0, extWall + partyWalls + windows + unheatedWalls + floorLoss + ceiling + interior);
   const volume = A * floor.clearHeight;
   const eta = b.heatRecovery ? Math.min(0.95, Math.max(0, b.etaHR)) : 0;
   const ventilation = Math.max(0, RHO_CP_AIR * room.airChange * volume * dT * (1 - eta));
@@ -346,6 +391,7 @@ export function roomHeatLoad(project: Project, room: Room, floor: Floor, ctx: Bu
     windowArea: winA,
     doorArea: doorA,
     extWall,
+    partyWalls,
     windows,
     unheatedWalls,
     floor: floorLoss,

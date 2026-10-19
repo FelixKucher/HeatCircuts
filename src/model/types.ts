@@ -1,4 +1,4 @@
-// Datenmodell von HeatCircuits (Version 2).
+// Datenmodell von HeatCircuits (Version 3): Gebäude-CAD und Flächenheizung in einem Modell.
 // Alle Längen in Metern, Temperaturen in °C, U-Werte in W/(m²·K), Wärmewiderstände in m²·K/W.
 // Planlage: x nach rechts, y nach unten (wie in der Bildschirmdarstellung), z nach oben.
 
@@ -7,14 +7,20 @@ export interface Vec {
   y: number;
 }
 
-export type WallKind = 'exterior' | 'interior' | 'unheated';
-export type FloorBoundary = 'auto' | 'ground' | 'unheated' | 'heated' | 'outside';
-export type CeilingBoundary = 'auto' | 'roof' | 'unheated' | 'heated';
+export type WallKind = 'exterior' | 'interior' | 'unheated' | 'party';
+export type FloorBoundary = 'auto' | 'ground' | 'unheated' | 'heated' | 'outside' | 'neighbor';
+export type CeilingBoundary = 'auto' | 'roof' | 'unheated' | 'heated' | 'neighbor';
 export type LayingPattern = 'spiral' | 'meander';
 export type SurfaceKind = 'floor' | 'ceiling' | 'wall';
 export type OpeningKind = 'window' | 'door' | 'entrance' | 'garage';
 export type VoidKind = 'stair' | 'spiral' | 'void';
 export type RoofType = 'gable' | 'hip' | 'shed' | 'flat' | 'none';
+/** Darstellung einer Öffnung (Plan/3D); die bauphysikalische Art steht in `kind` */
+export type OpeningStyle = 'door' | 'doubleDoor' | 'slidingDoor' | 'passage' | 'window' | 'frenchWindow' | 'roofWindow' | 'garageDoor';
+export type FloorFinish = 'parkett' | 'laminat' | 'fliesen' | 'naturstein' | 'teppich' | 'beton' | 'farbe';
+export type StairType = 'straight' | 'lshape' | 'spiral';
+export type HouseType = 'efh' | 'dhh' | 'rmh' | 'reh' | 'bungalow' | 'villa' | 'mfh' | 'whg';
+export type Compass4 = 'N' | 'O' | 'S' | 'W';
 
 /** Fenster, Tür oder Tor in einer Wand. Lage über den Abstand der Öffnungsmitte vom Wandanfang a. */
 export interface Opening {
@@ -26,6 +32,15 @@ export interface Opening {
   height: number;
   /** Brüstungshöhe über OK FFB */
   sill: number;
+  /** Darstellung; fehlt = aus `kind` */
+  style?: OpeningStyle;
+  /** Türblatt öffnet zur linken (+n) bzw. rechten Wandseite */
+  side?: 'left' | 'right';
+  /** Bandseite am Anfang (a) oder Ende (b) der Öffnung */
+  hinge?: 'a' | 'b';
+  color?: string;
+  /** U-Wert dieser Öffnung; null/undefined = Gebäudewert (Fenster bzw. Tür) */
+  uValue?: number | null;
 }
 
 export interface Wall {
@@ -38,6 +53,15 @@ export interface Wall {
   openings: Opening[];
   /** Höhe des angeschütteten Erdreichs über OK FFB dieses Geschosses in m; undefined/null = aus dem Gelände */
   earthHeight?: number | null;
+  /** Art automatisch aus den angrenzenden Räumen bestimmen */
+  kindAuto?: boolean;
+  /** Wandhöhe; null = Geschosshöhe */
+  height?: number | null;
+  /** Farbe der linken (+n) und rechten Wandseite */
+  colorLeft?: string;
+  colorRight?: string;
+  /** Schichtaufbau nur dieser Wand; null = Gebäudeaufbau der Wandart */
+  construction?: Construction | null;
 }
 
 /** Heizfläche eines Raums. Ein Raum kann mehrere Heizflächen haben (z. B. Fußboden + Wand). */
@@ -92,6 +116,67 @@ export interface Room {
   circuitsOverride: number | null;
   /** Nicht belegte Bodenfläche (Einbauten, Küchenzeile, Dusche) in m² */
   excludedArea: number;
+  /** Oberfläche und Darstellung */
+  floorFinish?: FloorFinish;
+  floorColor?: string;
+  ceilingColor?: string;
+  showFloor?: boolean;
+  showCeiling?: boolean;
+  labelOffset?: Vec;
+  /** Aufbau von Boden und Decke nur dieses Raums; null = Gebäudeaufbau */
+  floorConstruction?: Construction | null;
+  ceilingConstruction?: Construction | null;
+}
+
+export interface Furniture {
+  id: string;
+  /** Schlüssel im Möbelkatalog */
+  catalog: string;
+  name: string;
+  pos: Vec;
+  /** Drehung im Uhrzeigersinn (Plan) in Grad */
+  angle: number;
+  width: number;
+  depth: number;
+  height: number;
+  /** Unterkante über Fußboden */
+  elevation: number;
+  color: string;
+  mirrored: boolean;
+  visible: boolean;
+}
+
+/** Treppe im unteren Geschoss; der Deckendurchbruch im Geschoss darüber entsteht automatisch */
+export interface Stair {
+  id: string;
+  type: StairType;
+  pos: Vec;
+  angle: number;
+  width: number;
+  /** Lauflänge (gerade, L inkl. Podest) bzw. Durchmesser (Spindel) */
+  length: number;
+  length2: number;
+  /** Steigungen; null = aus der Geschosshöhe (≈ 17,5 cm) */
+  steps: number | null;
+  clockwise: boolean;
+  color: string;
+  cutCeiling: boolean;
+}
+
+export interface Dimension {
+  id: string;
+  a: Vec;
+  b: Vec;
+  /** Abstand der Maßlinie (links positiv) */
+  offset: number;
+}
+
+export interface Label {
+  id: string;
+  pos: Vec;
+  text: string;
+  size: number;
+  angle: number;
 }
 
 export interface Manifold {
@@ -123,6 +208,8 @@ export interface FloorVoid {
   radius?: number;
   /** gerade Treppe: Laufrichtung (Antritt → Austritt) */
   direction?: 'x+' | 'x-' | 'y+' | 'y-';
+  /** automatisch aus einer Treppe des Geschosses darunter erzeugt */
+  stairId?: string;
 }
 
 export interface BackgroundImage {
@@ -156,6 +243,14 @@ export interface Floor {
   manifolds: Manifold[];
   routes: Route[];
   voids: FloorVoid[];
+  /** Deckenstärke unter diesem Geschoss (Darstellung) */
+  floorThickness: number;
+  /** in 3D anzeigen */
+  visible: boolean;
+  furniture: Furniture[];
+  stairs: Stair[];
+  dimensions: Dimension[];
+  labels: Label[];
 }
 
 export interface HeatSource {
@@ -191,6 +286,7 @@ export interface Roof {
   insulation: 'rafters' | 'topSlab';
   /** Kniestock (Drempel) über OK FFB des obersten Geschosses */
   kneeWall: number;
+  color?: string;
 }
 
 /** Gelände: eben oder geneigte Ebene (Hanglage). Plan oben = Norden, Osten = +x. */
@@ -202,6 +298,35 @@ export interface Terrain {
   rise: number;
   /** Bergseite */
   uphill: 'N' | 'O' | 'S' | 'W';
+}
+
+/** Standort und Gebäudeart */
+export interface Site {
+  houseType: HouseType;
+  /** angebaute Seiten (Haustrennwand zum beheizten Nachbarhaus) */
+  attached: Compass4[];
+  /** Wohnung: Lage im Gebäude */
+  unitPosition: 'ground' | 'middle' | 'top';
+  /** Temperatur beheizter Nachbarhäuser/-wohnungen (Annahme) */
+  neighbourTemp: number;
+  /** Nordrichtung: Drehung von Plan-oben im Uhrzeigersinn in Grad */
+  north: number;
+  lat: number | null;
+  lon: number | null;
+  /** Höhe über NN in m */
+  altitude: number;
+  /** Bezeichnung des Orts (frei) */
+  place: string;
+}
+
+/** Zeicheneinstellungen */
+export interface Settings {
+  wallThickness: number;
+  gridStep: number;
+  showGrid: boolean;
+  magnetism: boolean;
+  showRoomArea: boolean;
+  showWallDims: boolean;
 }
 
 export interface BuildingData {
@@ -232,6 +357,8 @@ export interface BuildingData {
   uUnheatedSlab: number;
   uUnheatedWall: number;
   uInteriorWall: number;
+  /** Haustrennwand / Wohnungstrennwand zum beheizten Nachbarn */
+  uPartyWall: number;
   deltaUTB: number;
   heatRecovery: boolean;
   etaHR: number;
@@ -266,16 +393,20 @@ export interface DesignParams {
   maxOutlets: number;
   /** Kreisanzahl je Verteiler so wählen, dass die Kreislängen möglichst gleich sind */
   balanceLengths: boolean;
+  /** vorgesehener Wärmeerzeuger (Schlüssel in HEAT_SOURCE_TYPES) */
+  generator: string;
 }
 
 export interface Project {
-  version: 2;
+  version: 3;
   name: string;
   isExample: boolean;
   building: BuildingData;
   design: DesignParams;
   roof: Roof;
   terrain: Terrain;
+  site: Site;
+  settings: Settings;
   floors: Floor[];
   heatSource: HeatSource | null;
   /** Assistent abgeschlossen / aktueller Schritt */

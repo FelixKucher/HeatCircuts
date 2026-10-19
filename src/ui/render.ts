@@ -1,6 +1,5 @@
 import type { Floor, FloorVoid, HeatingSurface, ImageStore, Opening, Project, Room, Vec, Wall } from '../model/types';
 import type { DesignResult, RoomResult } from '../calc/design';
-import type { Selection } from '../model/store';
 import { BEND_RADIUS_FACTOR, PIPES } from '../model/catalog';
 import { add, centroid, cross, dist, mul, norm, sub, v } from '../geometry/geom';
 import { generateLayout, splitPolygon, type CircuitDrawing } from '../geometry/layout';
@@ -15,13 +14,19 @@ export interface RenderInput {
   images: ImageStore;
   /** Pixel pro Meter */
   scale: number;
-  selection: Selection | null;
+  selection: { kind: string; id: string } | null;
   showCircuits: boolean;
   showLabels: boolean;
   ghost: Floor | null;
 }
 
 export interface RenderLayers {
+  /** Elektro- und Deckenheizflächen */
+  heatAreas: string;
+  /** Wandheizfelder */
+  wallHeat: string;
+  /** Griffe für Anschlusspunkt und Leitungswegpunkte */
+  roomHandles: string;
   ghost: string;
   rooms: string;
   voids: string;
@@ -170,7 +175,7 @@ export function renderLayers(o: RenderInput): RenderLayers {
   const { floor, design, project, scale } = o;
   const px = (n: number) => n / scale;
   const sel = o.selection;
-  const L: RenderLayers = { ghost: '', rooms: '', voids: '', circuits: '', feeders: '', walls: '', openings: '', objects: '', labels: '', handles: '' };
+  const L: RenderLayers = { heatAreas: '', wallHeat: '', roomHandles: '', ghost: '', rooms: '', voids: '', circuits: '', feeders: '', walls: '', openings: '', objects: '', labels: '', handles: '' };
 
   if (o.ghost) {
     L.ghost = o.ghost.walls
@@ -186,8 +191,8 @@ export function renderLayers(o: RenderInput): RenderLayers {
     L.rooms += `<polygon points="${pts(room.polygon)}" class="${roomFillClass(r, room)}${isSel ? ' is-selected' : ''}" data-kind="room" data-id="${room.id}"/>`;
     if (!room.heated) continue;
     for (const s of room.surfaces) {
-      if (s.kind === 'floor' && s.system === 'electric') L.rooms += `<polygon points="${pts(subtractVoids(room.polygon, floor.voids))}" class="elmat" fill="url(#hc-elmat)"/>`;
-      if (s.kind === 'ceiling') L.rooms += `<polygon points="${pts(room.polygon)}" class="ceil-area" fill="url(#hc-ceil)"/>`;
+      if (s.kind === 'floor' && s.system === 'electric') L.heatAreas += `<polygon points="${pts(subtractVoids(room.polygon, floor.voids))}" class="elmat" fill="url(#hc-elmat)"/>`;
+      if (s.kind === 'ceiling') L.heatAreas += `<polygon points="${pts(room.polygon)}" class="ceil-area" fill="url(#hc-ceil)"/>`;
     }
   }
 
@@ -253,7 +258,7 @@ export function renderLayers(o: RenderInput): RenderLayers {
       if (!w) continue;
       const seg = wallHeatSegment(w, room, s);
       if (!seg) continue;
-      L.openings += `<line x1="${f(seg[0].x)}" y1="${f(seg[0].y)}" x2="${f(seg[1].x)}" y2="${f(seg[1].y)}" class="wall-heat${s.system === 'wall_dry' ? ' dry' : ''}" data-kind="wallheat" data-id="${room.id}|${s.id}"/>`;
+      L.wallHeat += `<line x1="${f(seg[0].x)}" y1="${f(seg[0].y)}" x2="${f(seg[1].x)}" y2="${f(seg[1].y)}" class="wall-heat${s.system === 'wall_dry' ? ' dry' : ''}" data-kind="wallheat" data-id="${room.id}|${s.id}"/>`;
     }
   }
 
@@ -346,11 +351,11 @@ export function renderLayers(o: RenderInput): RenderLayers {
       if (r?.connector && r.circuits.length) {
         const c = r.connector;
         const s = px(7);
-        L.handles += `<path d="M${f(c.x)} ${f(c.y - s)}L${f(c.x + s)} ${f(c.y)}L${f(c.x)} ${f(c.y + s)}L${f(c.x - s)} ${f(c.y)}Z" class="handle-connector" data-handle="connector"/>`;
+        L.roomHandles += `<path d="M${f(c.x)} ${f(c.y - s)}L${f(c.x + s)} ${f(c.y)}L${f(c.x)} ${f(c.y + s)}L${f(c.x - s)} ${f(c.y)}Z" class="handle-connector" data-handle="connector"/>`;
       }
       const route = floor.routes.find((x) => x.roomId === room.id);
       route?.points.forEach((p, i) => {
-        L.handles += `<circle cx="${f(p.x)}" cy="${f(p.y)}" r="${f(px(5))}" class="handle" data-handle="route" data-index="${i}" data-route="${route.id}"/>`;
+        L.roomHandles += `<circle cx="${f(p.x)}" cy="${f(p.y)}" r="${f(px(5))}" class="handle" data-handle="route" data-index="${i}" data-route="${route.id}"/>`;
       });
     }
   } else if (sel?.kind === 'wall') {

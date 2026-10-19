@@ -7,7 +7,7 @@ import { applyConstructionUValues, applyYearBuilt } from '../model/factory';
 import type { DesignResult } from '../calc/design';
 import { bindFields, fieldHtml, type FieldSpec } from './forms';
 import { cm, esc, num, parseNum } from './format';
-import { WARNING_TEXT } from './sidebar';
+import { WARNING_TEXT } from './props';
 
 // ---------- Modal ----------
 export interface Modal {

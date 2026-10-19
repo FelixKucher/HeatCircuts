@@ -7,7 +7,8 @@ export type FieldSpec =
   | { kind: 'select'; key: string; label: string; value: string; options: [string, string][] | { group: string; options: [string, string][] }[]; hint?: string }
   | { kind: 'check'; key: string; label: string; value: boolean }
   | { kind: 'range'; key: string; label: string; value: number; min: number; max: number; step: number; display: string }
-  | { kind: 'readout'; label: string; value: string; tone?: 'warn' | 'ok' | 'muted' };
+  | { kind: 'readout'; label: string; value: string; tone?: 'warn' | 'ok' | 'muted' }
+  | { kind: 'color'; key: string; label: string; value: string };
 
 export function fieldHtml(s: FieldSpec, prefix: string): string {
   if (s.kind === 'readout') {
@@ -36,6 +37,8 @@ export function fieldHtml(s: FieldSpec, prefix: string): string {
     }
     case 'check':
       return `<label class="field check" for="${id}"><input id="${id}" data-key="${s.key}" data-kind="check" type="checkbox"${s.value ? ' checked' : ''}/><span class="lab">${esc(s.label)}</span></label>`;
+    case 'color':
+      return `<label class="field color" for="${id}"><span class="lab">${esc(s.label)}</span><span class="color-wrap"><input id="${id}" data-key="${s.key}" data-kind="color" type="color" value="${esc(s.value)}"/><code>${esc(s.value)}</code></span></label>`;
     case 'range':
       return `<label class="field" for="${id}"><span class="lab">${esc(s.label)} <b>${esc(s.display)}</b></span><input id="${id}" data-key="${s.key}" data-kind="range" type="range" min="${s.min}" max="${s.max}" step="${s.step}" value="${s.value}"/></label>`;
   }
@@ -50,7 +53,7 @@ export function bindFields(root: HTMLElement, apply: (key: string, value: FieldV
     const key = el.dataset?.key;
     if (!key) return;
     const kind = el.dataset.kind;
-    if (e.type === 'input' && kind !== 'range') return;
+    if (e.type === 'input' && kind !== 'range' && kind !== 'color') return;
     let value: FieldValue;
     if (kind === 'num') {
       const raw = el.value.trim();

@@ -1,66 +1,10 @@
-// Dateien: Projekt (JSON), Autosave, DXF-Import (Vektor-Hintergrund) und -Export, HeatCircuits-Übergabe.
+// DXF: ASCII-DXF lesen (als maßstäblicher Vektorhintergrund) und Grundriss als DXF R12 in Metern schreiben.
+// Austausch mit AutoCAD, CADCraft (https://github.com/storytold/cadcraft) und anderen CAD-Programmen.
 
-import { migrate, uid, type BackgroundImage, type Level, type Project, type Vec, type Wall } from './model';
-import { wallOutlines, pointOnWall, wallLength } from './walls';
-import { stairGeometry } from './stairs';
-import { area, centroid, pointInPolygon } from '../../src/geometry/geom';
-import { newFloor, newProject as newHcProject, newRoom as newHcRoom, newWall as newHcWall } from '../../src/model/factory';
-import type { OpeningKind, Project as HcProject } from '../../src/model/types';
-
-export { offerDownload, safeFilename } from '../../src/io/persist';
-
-// ---------- Projekt ----------
-
-export function serialize(p: Project): string {
-  return JSON.stringify(p);
-}
-
-export function parseProject(text: string): Project {
-  const data = JSON.parse(text);
-  if (data?.format !== 'hauscad' || !Array.isArray(data.levels) || !data.levels.length) throw new Error('Keine HausCAD-Projektdatei');
-  return migrate(data as Project);
-}
-
-const DB = 'hauscad';
-const KEY = 'autosave';
-
-function db(): Promise<IDBDatabase> {
-  return new Promise((res, rej) => {
-    const r = indexedDB.open(DB, 1);
-    r.onupgradeneeded = () => r.result.createObjectStore('p');
-    r.onsuccess = () => res(r.result);
-    r.onerror = () => rej(r.error);
-  });
-}
-
-export async function autosave(p: Project): Promise<boolean> {
-  try {
-    const d = await db();
-    await new Promise<void>((res, rej) => {
-      const tx = d.transaction('p', 'readwrite');
-      tx.objectStore('p').put(serialize(p), KEY);
-      tx.oncomplete = () => res();
-      tx.onerror = () => rej(tx.error);
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export async function loadAutosave(): Promise<Project | null> {
-  try {
-    const d = await db();
-    const txt = await new Promise<string | undefined>((res, rej) => {
-      const r = d.transaction('p').objectStore('p').get(KEY);
-      r.onsuccess = () => res(r.result as string | undefined);
-      r.onerror = () => rej(r.error);
-    });
-    return txt ? parseProject(txt) : null;
-  } catch {
-    return null;
-  }
-}
+import type { BackgroundImage, Floor, Project, Vec } from '../model/types';
+import { pointOnWall, wallOutlines } from '../cad/walls';
+import { stairGeometry } from '../cad/stairs';
+import { area, centroid } from '../geometry/geom';
 
 // ---------- DXF lesen ----------
 
@@ -215,7 +159,7 @@ export function parseDxf(text: string): DxfResult {
 }
 
 /** DXF als maßstäblicher Vektor-Hintergrund (1 m = 100 px), Plan-y nach unten */
-export function dxfBackground(d: DxfResult): BackgroundImage | null {
+export function dxfBackground(d: DxfResult): { background: Omit<BackgroundImage, 'imageId'>; dataUrl: string } | null {
   if (!d.segments.length) return null;
   const u = d.unit;
   const xs = d.segments.flatMap((s) => [s[0], s[2]]).map((x) => x * u);
@@ -236,18 +180,13 @@ export function dxfBackground(d: DxfResult): BackgroundImage | null {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${(W * k).toFixed(0)}" height="${(H * k).toFixed(0)}" viewBox="0 0 ${(W * k).toFixed(1)} ${(H * k).toFixed(1)}"><path d="${path}" fill="none" stroke="#1d3557" stroke-width="1.6" stroke-linecap="round"/>${txt}</svg>`;
   return {
     dataUrl: `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`,
-    widthPx: W * k,
-    heightPx: H * k,
-    pxPerM: k,
-    offset: { x: minX, y: minY },
-    opacity: 0.6,
-    visible: true,
+    background: { widthPx: W * k, heightPx: H * k, pxPerM: k, offset: { x: minX, y: minY }, opacity: 0.6, visible: true, locked: false, calibrated: true },
   };
 }
 
 // ---------- DXF schreiben (R12, Meter) ----------
 
-export function exportDxf(p: Project, l: Level): string {
+export function exportDxf(p: Project, l: Floor): string {
   const out: string[] = [];
   const g = (c: number, v: string | number) => out.push(String(c), typeof v === 'number' ? v.toFixed(4) : v);
   const Y = (y: number) => -y;
@@ -318,7 +257,7 @@ export function exportDxf(p: Project, l: Level): string {
     const T = (x: number, y: number) => ({ x: f.pos.x + x * Math.cos(a) - y * Math.sin(a), y: f.pos.y + x * Math.sin(a) + y * Math.cos(a) });
     polyline('MOEBEL', [T(-f.width / 2, -f.depth / 2), T(f.width / 2, -f.depth / 2), T(f.width / 2, f.depth / 2), T(-f.width / 2, f.depth / 2)]);
   }
-  for (const s of l.stairs) for (const t of stairGeometry(s, l.height).treads) polyline('TREPPEN', t.poly);
+  for (const s of l.stairs) for (const t of stairGeometry(s, l.storeyHeight).treads) polyline('TREPPEN', t.poly);
   for (const d of l.dimensions) {
     const dx = d.b.x - d.a.x;
     const dy = d.b.y - d.a.y;
@@ -338,76 +277,3 @@ export function exportDxf(p: Project, l: Level): string {
   return out.join('\n');
 }
 
-// ---------- Übergabe an HeatCircuits ----------
-
-const ROOM_GUESS: [RegExp, string][] = [
-  [/bad|dusch/i, 'bad'],
-  [/wc|gäste|toilette/i, 'wc'],
-  [/küche|kueche|koch/i, 'kueche'],
-  [/wohn/i, 'wohnen'],
-  [/ess/i, 'essen'],
-  [/schlaf|eltern/i, 'schlafen'],
-  [/kind/i, 'kind'],
-  [/büro|buero|arbeit/i, 'buero'],
-  [/flur|diele|gang|eingang/i, 'flur'],
-  [/treppe/i, 'treppe'],
-  [/hwr|hauswirtschaft|wasch/i, 'hwr'],
-  [/abstell|speis/i, 'abstell'],
-  [/technik|heiz/i, 'technik'],
-  [/garage|carport/i, 'garage'],
-  [/keller/i, 'keller'],
-  [/dachboden|spitzboden/i, 'dachboden'],
-];
-
-const roomTypeOf = (name: string) => ROOM_GUESS.find(([re]) => re.test(name))?.[1] ?? 'wohnen';
-
-/** Außenwand = auf mindestens einer Seite liegt kein Raum */
-function isExterior(w: Wall, l: Level): boolean {
-  const mid = wallLength(w) / 2;
-  const off = w.thickness / 2 + 0.12;
-  const pl = pointOnWall(w, mid, off);
-  const pr = pointOnWall(w, mid, -off);
-  const inL = l.rooms.some((r) => pointInPolygon(pl, r.polygon));
-  const inR = l.rooms.some((r) => pointInPolygon(pr, r.polygon));
-  return !(inL && inR);
-}
-
-export function toHeatCircuits(p: Project): { format: 'heatcircuits'; version: 1; savedAt: string; project: HcProject; images: Record<string, string> } {
-  const hc = newHcProject(p.name);
-  hc.floors = [];
-  const sorted = p.levels.slice().sort((a, b) => a.elevation - b.elevation);
-  for (const l of sorted) {
-    const f = newFloor(l.name, l.elevation);
-    f.storeyHeight = l.height;
-    f.clearHeight = Math.max(2, l.height - 0.3);
-    f.belowGrade = l.elevation + l.height <= p.ground.level + 0.3;
-    for (const w of l.walls) {
-      const ext = isExterior(w, l);
-      const hw = newHcWall({ ...w.a }, { ...w.b }, ext ? 'exterior' : 'interior', w.thickness);
-      hw.openings = w.openings.map((o) => {
-        let kind: OpeningKind = 'window';
-        if (o.type === 'garageDoor') kind = 'garage';
-        else if (o.type === 'door' || o.type === 'doubleDoor' || o.type === 'slidingDoor' || o.type === 'passage') kind = ext ? 'entrance' : 'door';
-        return { id: uid('o'), kind, offset: o.offset, width: o.width, height: o.height, sill: o.sill };
-      });
-      f.walls.push(hw);
-    }
-    for (const r of l.rooms) f.rooms.push(newHcRoom(hc, f, r.polygon.map((q) => ({ ...q })), roomTypeOf(r.name), r.name));
-    // Treppen des Geschosses darunter als Deckenöffnung
-    const i = sorted.indexOf(l);
-    if (i > 0)
-      for (const s of sorted[i - 1].stairs)
-        if (s.cutCeiling) f.voids.push({ id: uid('v'), kind: s.type === 'spiral' ? 'spiral' : 'stair', polygon: stairGeometry(s, sorted[i - 1].height).outline, ...(s.type === 'spiral' ? { center: { ...s.pos }, radius: s.length / 2 } : {}) });
-    // Heizkreisverteiler aus dem Möbelkatalog übernehmen
-    for (const fu of l.furniture) if (fu.catalog === 'manifold') f.manifolds.push({ id: uid('m'), name: `HKV ${f.name}`, pos: { ...fu.pos }, supplyLengthOverride: null, maxOutlets: hc.design.maxOutlets });
-    const hp = l.furniture.find((fu) => fu.catalog === 'heatpump');
-    if (hp && !hc.heatSource) hc.heatSource = { floorId: f.id, pos: { ...hp.pos }, name: 'Wärmepumpe', type: 'wp_luft' };
-    hc.floors.push(f);
-  }
-  hc.roof.type = p.roof.type;
-  hc.roof.pitch = p.roof.pitch;
-  hc.roof.ridge = p.roof.ridge;
-  hc.roof.overhang = p.roof.overhang;
-  hc.roof.kneeWall = p.roof.kneeWall;
-  return { format: 'heatcircuits', version: 1, savedAt: new Date().toISOString(), project: hc, images: {} };
-}

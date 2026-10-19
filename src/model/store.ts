@@ -1,30 +1,49 @@
+// Zustand mit Undo/Redo (JSON-Schnappschüsse), Mehrfachauswahl, Arbeitsphase und zwischengespeicherter Auslegung.
+
 import type { Floor, ImageStore, Project } from './types';
 import { computeDesign, type DesignResult } from '../calc/design';
+import { normalizeProject } from './normalize';
 
-export type SelectionKind = 'wall' | 'room' | 'manifold' | 'heatSource' | 'route' | 'opening' | 'void';
-export interface Selection {
-  kind: SelectionKind;
+export type SelKind = 'wall' | 'opening' | 'room' | 'furniture' | 'stair' | 'dimension' | 'label' | 'void' | 'manifold' | 'heatSource' | 'route';
+export interface SelItem {
+  kind: SelKind;
   id: string;
+  /** Öffnung: Id der Wand */
+  wallId?: string;
 }
 
-type Listener = (reason: ChangeReason) => void;
-export type ChangeReason = 'project' | 'selection' | 'view' | 'floor' | 'load';
+/** Arbeitsphasen: Grundriss → Bauteile → Heizflächen → Heizkreise → Ergebnisse */
+export type Phase = 'build' | 'parts' | 'heating' | 'circuits' | 'results';
+export const PHASES: { id: Phase; label: string; short: string }[] = [
+  { id: 'build', label: 'Grundriss', short: '1' },
+  { id: 'parts', label: 'Bauteile', short: '2' },
+  { id: 'heating', label: 'Heizflächen', short: '3' },
+  { id: 'circuits', label: 'Heizkreise', short: '4' },
+  { id: 'results', label: 'Ergebnisse', short: '5' },
+];
 
-const MAX_UNDO = 120;
+export type ChangeReason = 'project' | 'live' | 'selection' | 'view' | 'floor' | 'load' | 'phase';
+type Listener = (reason: ChangeReason) => void;
+
+const MAX_UNDO = 150;
 
 export class Store {
   project: Project;
   images: ImageStore;
   activeFloorId: string;
-  selection: Selection | null = null;
+  selection: SelItem[] = [];
+  phase: Phase = 'build';
+  dirty = false;
   private undoStack: string[] = [];
   private redoStack: string[] = [];
   private listeners = new Set<Listener>();
   private cachedDesign: DesignResult | null = null;
+  private liveSnapshot: string | null = null;
 
   constructor(project: Project, images: ImageStore) {
     this.project = project;
     this.images = images;
+    normalizeProject(project);
     this.activeFloorId = project.floors[0].id;
   }
 
@@ -37,42 +56,68 @@ export class Store {
     return this.cachedDesign;
   }
 
+  /** erstes gewähltes Objekt */
+  get sel(): SelItem | null {
+    return this.selection[0] ?? null;
+  }
+
   on(fn: Listener): () => void {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
   }
 
   emit(reason: ChangeReason): void {
-    if (reason === 'project' || reason === 'load') this.cachedDesign = null;
+    if (reason === 'project' || reason === 'load' || reason === 'live') this.cachedDesign = null;
     this.listeners.forEach((fn) => fn(reason));
   }
 
-  /** Änderung mit Undo-Schritt. `mutate` arbeitet direkt auf dem Projekt. */
-  commit(mutate: (p: Project) => void): void {
-    this.undoStack.push(JSON.stringify(this.project));
+  /** Änderung als ein Undo-Schritt; `mutate` arbeitet direkt auf Projekt und aktivem Geschoss. */
+  commit(mutate: (p: Project, f: Floor) => void): void {
+    const before = JSON.stringify(this.project);
+    mutate(this.project, this.floor);
+    normalizeProject(this.project);
+    if (JSON.stringify(this.project) === before) {
+      this.emit('selection');
+      return;
+    }
+    this.undoStack.push(before);
     if (this.undoStack.length > MAX_UNDO) this.undoStack.shift();
     this.redoStack = [];
-    mutate(this.project);
+    this.dirty = true;
     this.validateSelection();
     this.emit('project');
   }
 
-  /** Startpunkt für eine fortlaufende Änderung (z. B. Ziehen); schließt mit endLive(). */
-  private liveSnapshot: string | null = null;
+  /** Beginn einer fortlaufenden Änderung (Ziehen); erst endLive() erzeugt den Undo-Schritt. */
   beginLive(): void {
-    if (!this.liveSnapshot) this.liveSnapshot = JSON.stringify(this.project);
+    if (this.liveSnapshot === null) this.liveSnapshot = JSON.stringify(this.project);
   }
-  live(mutate: (p: Project) => void): void {
-    mutate(this.project);
-    this.emit('project');
+
+  live(mutate: (p: Project, f: Floor) => void): void {
+    if (this.liveSnapshot === null) this.beginLive();
+    mutate(this.project, this.floor);
+    normalizeProject(this.project);
+    this.emit('live');
   }
+
   endLive(): void {
-    if (this.liveSnapshot && this.liveSnapshot !== JSON.stringify(this.project)) {
+    if (this.liveSnapshot === null) return;
+    if (this.liveSnapshot !== JSON.stringify(this.project)) {
       this.undoStack.push(this.liveSnapshot);
       if (this.undoStack.length > MAX_UNDO) this.undoStack.shift();
       this.redoStack = [];
+      this.dirty = true;
     }
     this.liveSnapshot = null;
+    this.validateSelection();
+    this.emit('project');
+  }
+
+  cancelLive(): void {
+    if (this.liveSnapshot === null) return;
+    this.project = JSON.parse(this.liveSnapshot);
+    this.liveSnapshot = null;
+    this.emit('project');
   }
 
   canUndo(): boolean {
@@ -103,25 +148,37 @@ export class Store {
   }
 
   load(project: Project, images: ImageStore): void {
+    normalizeProject(project);
     this.project = project;
     this.images = images;
     this.undoStack = [];
     this.redoStack = [];
-    this.selection = null;
-    this.activeFloorId = project.floors[0].id;
+    this.selection = [];
+    this.dirty = false;
+    this.activeFloorId = project.floors.slice().sort((a, b) => a.elevation - b.elevation).find((f) => f.elevation >= -0.01)?.id ?? project.floors[0].id;
     this.emit('load');
   }
 
   setFloor(id: string): void {
     if (this.activeFloorId === id) return;
     this.activeFloorId = id;
-    this.selection = null;
+    this.selection = [];
     this.emit('floor');
   }
 
-  select(sel: Selection | null): void {
-    this.selection = sel;
+  setPhase(p: Phase): void {
+    if (this.phase === p) return;
+    this.phase = p;
+    this.emit('phase');
+  }
+
+  select(items: SelItem[] | SelItem | null): void {
+    this.selection = items === null ? [] : Array.isArray(items) ? items : [items];
     this.emit('selection');
+  }
+
+  isSelected(kind: SelKind, id: string): boolean {
+    return this.selection.some((s) => s.kind === kind && s.id === id);
   }
 
   private fixActiveFloor(): void {
@@ -129,18 +186,34 @@ export class Store {
   }
 
   private validateSelection(): void {
-    const s = this.selection;
-    if (!s) return;
     const f = this.floor;
-    const exists =
-      (s.kind === 'wall' && f.walls.some((w) => w.id === s.id)) ||
-      (s.kind === 'room' && f.rooms.some((r) => r.id === s.id)) ||
-      (s.kind === 'manifold' && f.manifolds.some((m) => m.id === s.id)) ||
-      (s.kind === 'route' && f.routes.some((r) => r.id === s.id)) ||
-      (s.kind === 'void' && f.voids.some((x) => x.id === s.id)) ||
-      (s.kind === 'opening' && f.walls.some((w) => w.openings.some((o) => `${w.id}|${o.id}` === s.id))) ||
-      (s.kind === 'heatSource' && this.project.heatSource?.floorId === f.id);
-    if (!exists) this.selection = null;
+    const p = this.project;
+    this.selection = this.selection.filter((s) => {
+      switch (s.kind) {
+        case 'wall':
+          return f.walls.some((w) => w.id === s.id);
+        case 'opening':
+          return f.walls.some((w) => w.id === s.wallId && w.openings.some((o) => o.id === s.id));
+        case 'room':
+          return f.rooms.some((r) => r.id === s.id);
+        case 'furniture':
+          return f.furniture.some((x) => x.id === s.id);
+        case 'stair':
+          return f.stairs.some((x) => x.id === s.id);
+        case 'dimension':
+          return f.dimensions.some((x) => x.id === s.id);
+        case 'label':
+          return f.labels.some((x) => x.id === s.id);
+        case 'void':
+          return f.voids.some((x) => x.id === s.id);
+        case 'manifold':
+          return f.manifolds.some((x) => x.id === s.id);
+        case 'route':
+          return f.routes.some((x) => x.id === s.id);
+        case 'heatSource':
+          return p.heatSource?.floorId === f.id;
+      }
+    });
   }
 
   /** Bilder, die von keinem Geschoss mehr referenziert werden, entfernen. */

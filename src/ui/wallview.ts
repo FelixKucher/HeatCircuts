@@ -8,9 +8,9 @@ import { defaultField, fieldRuns, roomSpanOnWall } from '../geometry/wallfield';
 import { pipePathD } from '../geometry/pipepath';
 import { newSurface } from '../model/factory';
 import { pipeOf } from '../calc/surfaces';
-import { OPENING_DEFAULTS } from './editor';
+import { OPENING_STYLES, styleOf } from '../cad/openings';
 import { esc, num } from './format';
-import { wallLabel } from './sidebar';
+import { wallLabel } from './props';
 
 type Drag =
   | { type: 'field'; roomId: string; surfaceId: string; corner: 'x0z0' | 'x1z0' | 'x0z1' | 'x1z1' | 'move'; start: Vec; orig: NonNullable<HeatingSurface['field']> }
@@ -133,7 +133,7 @@ export class WallView {
     const surfaces = room ? room.surfaces.filter((s) => s.kind === 'wall' && s.wallId === wall.id) : [];
     this.head.innerHTML = `
       <button class="btn small" data-act="back" aria-label="Zurück zum Grundriss">← Grundriss</button>
-      <div class="wv-title"><b>${esc(wallLabel(wall, room ?? null))}</b><span class="muted"> · ${num(L, 2)} × ${num(H, 2)} m</span></div>
+      <div class="wv-title"><b>${esc(wallLabel(wall, room ?? null, this.store.project.site.north))}</b><span class="muted"> · ${num(L, 2)} × ${num(H, 2)} m</span></div>
       <label class="wv-room" for="wv-room">Raumseite <select id="wv-room">${rooms.map((r) => `<option value="${r.id}"${r.id === this.roomId ? ' selected' : ''}>${esc(r.name)}</option>`).join('')}</select></label>
       ${room && room.heated && surfaces.length === 0 ? `<button class="btn small primary" data-act="add-field">+ Wandheizung</button>` : ''}
       ${surfaces.length ? `<button class="btn small" data-act="reset-field">Heizfeld zurücksetzen</button>` : ''}`;
@@ -214,7 +214,7 @@ export class WallView {
       const w = Math.abs(q1.x - q0.x);
       h += `<rect x="${f(x)}" y="${f(q1.y)}" width="${f(w)}" height="${f(q0.y - q1.y)}" class="wv-opening ${o.kind}" data-opening="${o.id}"/>`;
       if (o.kind === 'window') h += `<line x1="${f(x + w / 2)}" y1="${f(q1.y)}" x2="${f(x + w / 2)}" y2="${f(q0.y)}" class="wv-sash"/>`;
-      h += `<text x="${f(x + w / 2)}" y="${f(q0.y - 8)}" class="wv-dim">${esc(OPENING_DEFAULTS[o.kind].label)}</text><text x="${f(x + w / 2)}" y="${f(q0.y + 16)}" class="wv-dim">${num(o.width, 2)} × ${num(o.height, 2)}</text>`;
+      h += `<text x="${f(x + w / 2)}" y="${f(q0.y - 8)}" class="wv-dim">${esc(OPENING_STYLES[styleOf(o)].label)}</text><text x="${f(x + w / 2)}" y="${f(q0.y + 16)}" class="wv-dim">${num(o.width, 2)} × ${num(o.height, 2)}</text>`;
     }
     // Bemaßung Gesamtlänge
     const d0 = P(0, 0);

@@ -1,4 +1,4 @@
-import type { BuildingData, DesignParams, Floor, HeatingSurface, Project, Roof, Room, SurfaceKind, Terrain, Vec, Wall, WallKind } from './types';
+import type { BuildingData, DesignParams, Floor, HeatingSurface, Project, Roof, Room, Settings, Site, SurfaceKind, Terrain, Vec, Wall, WallKind } from './types';
 import { BUILDING_STANDARDS, CLIMATE_LOCATIONS, COVERINGS, DEFAULT_ALLOWED_SPACINGS, PIPES, ROOM_TYPES, SCREEDS } from './catalog';
 import { ageClassFor, defaultConstructions, uValue, WINDOW_TYPES } from './constructions';
 import { HEATING_SYSTEMS } from './systems';
@@ -57,6 +57,7 @@ export function defaultBuilding(): BuildingData {
     uUnheatedSlab: std.uUnheatedSlab,
     uUnheatedWall: std.uUnheatedWall,
     uInteriorWall: 1.7,
+    uPartyWall: 0.9,
     deltaUTB: std.deltaUTB,
     heatRecovery: false,
     etaHR: 0.8,
@@ -86,6 +87,7 @@ export function defaultDesign(): DesignParams {
     rollLength: 240,
     maxOutlets: 12,
     balanceLengths: true,
+    generator: 'wp_luft',
   };
 }
 
@@ -97,13 +99,22 @@ export function defaultTerrain(): Terrain {
   return { type: 'flat', gradeLow: -0.2, rise: 0, uphill: 'N' };
 }
 
-export function newFloor(name: string, elevation: number): Floor {
+export function defaultSite(): Site {
+  const loc = CLIMATE_LOCATIONS.frankfurt;
+  return { houseType: 'efh', attached: [], unitPosition: 'middle', neighbourTemp: 15, north: 0, lat: loc.lat, lon: loc.lon, altitude: loc.alt, place: loc.label };
+}
+
+export function defaultSettings(): Settings {
+  return { wallThickness: 0.24, gridStep: 0.25, showGrid: true, magnetism: true, showRoomArea: true, showWallDims: true };
+}
+
+export function newFloor(name: string, elevation: number, storeyHeight = 2.9): Floor {
   return {
     id: uid('f'),
     name,
     elevation,
-    storeyHeight: 2.9,
-    clearHeight: 2.5,
+    storeyHeight,
+    clearHeight: Math.round((storeyHeight - 0.4) * 100) / 100,
     belowGrade: false,
     background: null,
     walls: [],
@@ -111,26 +122,34 @@ export function newFloor(name: string, elevation: number): Floor {
     manifolds: [],
     routes: [],
     voids: [],
+    floorThickness: 0.25,
+    visible: true,
+    furniture: [],
+    stairs: [],
+    dimensions: [],
+    labels: [],
   };
 }
 
 export function newProject(name = 'Neues Projekt'): Project {
   return {
-    version: 2,
+    version: 3,
     name,
     isExample: false,
     building: defaultBuilding(),
     design: defaultDesign(),
     roof: defaultRoof(),
     terrain: defaultTerrain(),
+    site: defaultSite(),
+    settings: defaultSettings(),
     floors: [newFloor('Erdgeschoss', 0)],
     heatSource: null,
     wizard: { done: false, step: 0 },
   };
 }
 
-export function newWall(a: Vec, b: Vec, kind: WallKind, thickness: number): Wall {
-  return { id: uid('w'), a, b, kind, thickness, openings: [] };
+export function newWall(a: Vec, b: Vec, kind: WallKind, thickness: number, kindAuto = false): Wall {
+  return { id: uid('w'), a: { ...a }, b: { ...b }, kind, thickness, openings: [], kindAuto };
 }
 
 export function newSurface(kind: SurfaceKind, system: string, spacing?: number): HeatingSurface {
@@ -211,7 +230,7 @@ export function migrateProject(raw: unknown): Project {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const p = raw as any;
   const base = newProject(p.name ?? 'Projekt');
-  p.version = 2;
+  p.version = 3;
   p.building = { ...base.building, ...(p.building ?? {}) };
   if (!p.building.constructions) p.building.constructions = defaultConstructions(p.building.yearBuilt ?? 2012);
   if (p.building.uTopSlab == null) p.building.uTopSlab = p.building.uRoof;
@@ -219,10 +238,18 @@ export function migrateProject(raw: unknown): Project {
   if (!Array.isArray(p.design.allowedSpacings) || !p.design.allowedSpacings.length) p.design.allowedSpacings = DEFAULT_ALLOWED_SPACINGS.slice();
   p.roof = { ...base.roof, ...(p.roof ?? {}) };
   p.terrain = { ...base.terrain, ...(p.terrain ?? {}) };
+  p.site = { ...base.site, ...(p.site ?? {}) };
+  p.settings = { ...base.settings, ...(p.settings ?? {}) };
   p.wizard = p.wizard ?? { done: true, step: 0 };
   for (const f of p.floors ?? []) {
     f.voids = f.voids ?? [];
     f.belowGrade = f.belowGrade ?? false;
+    f.floorThickness = f.floorThickness ?? 0.25;
+    f.visible = f.visible ?? true;
+    f.furniture = f.furniture ?? [];
+    f.stairs = f.stairs ?? [];
+    f.dimensions = f.dimensions ?? [];
+    f.labels = f.labels ?? [];
     for (const w of f.walls) w.openings = w.openings ?? [];
     for (const m of f.manifolds) m.maxOutlets = m.maxOutlets ?? 12;
     for (const r of f.rooms) {
