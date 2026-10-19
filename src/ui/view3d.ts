@@ -48,6 +48,7 @@ export class View3D {
   private terrain = new THREE.Group();
   private walk = { pos: new THREE.Vector3(), yaw: 0, pitch: 0, keys: new Set<string>(), raf: 0, last: 0 };
   private textures = new Map<string, THREE.Texture>();
+  private dark = false;
   private headlight = new THREE.PointLight(0xfff4e6, 0, 14, 1.4);
   private wasEmpty = true;
 
@@ -85,6 +86,19 @@ export class View3D {
     this.bindPick();
     this.bindWalk();
   }
+
+  /** Hintergrund und Nebel an das Farbschema anpassen */
+  setBackground(css: string, dark = false): void {
+    const c = new THREE.Color(css);
+    (this.scene.background as THREE.Color).copy(c);
+    this.scene.fog?.color.copy(c);
+    if (dark !== this.dark) {
+      this.dark = dark;
+      this.requestRebuild();
+    }
+    this.draw();
+  }
+
 
   // ---------- Ansicht ----------
 
@@ -562,7 +576,7 @@ export class View3D {
       (m.material as THREE.Material | undefined)?.dispose();
     }
     const b0 = buildingBounds(p);
-    const earth = new THREE.MeshStandardMaterial({ color: 0xb9c4a4, roughness: 1, side: THREE.DoubleSide });
+    const earth = new THREE.MeshStandardMaterial({ color: this.dark ? 0x5d6852 : 0xb9c4a4, roughness: 1, side: THREE.DoubleSide });
     if (!b0) {
       const g = new THREE.Mesh(new THREE.CircleGeometry(80, 48), earth);
       g.rotation.x = -Math.PI / 2;

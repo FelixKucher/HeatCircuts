@@ -56,8 +56,23 @@ Plan und 3D-Ansicht stehen geteilt nebeneinander (1 / 2 / 3). Die 3D-Ansicht bie
 | SVG | Plan des Geschosses mit Heizkreisen, mit oder ohne Vorlage |
 | PNG, GLB | 3D-Ansicht bzw. 3D-Modell |
 | CSV | Ergebnistabellen (Semikolon, Dezimalkomma) |
+| Auslegungsbericht DIN A4 | druckfertiges HTML (`@page A4`), Drucken als PDF oder Speichern: Deckblatt mit Kennwerten, Klima, U-Werte, Heizlast je Raum, Temperaturen und Oberflächentemperaturen, Heizkreise mit Einstellwert V̇ (l/min) und Drosselung, Verteiler, Material, Pläne je Geschoss, Normwerte |
 
 DWG wird nicht direkt gelesen und muss vorher nach DXF gewandelt werden, z. B. mit CADCraft oder dem ODA File Converter.
+
+## Normwerte und Annahmen
+
+Schwer zu beschaffende Werte sind mit dem europäischen Standard bzw. der gängigen Herstellerpraxis vorbelegt und bleiben änderbar. Jeder Wert trägt Quelle und Status (Norm, Norm national, Praxiswert, Annahme) – sichtbar unter „Auslegung“ und im Bericht. „EU-Normwerte setzen“ stellt die Auslegung zurück.
+
+| Größe | Vorgabe | Status |
+| --- | --- | --- |
+| max. Druckverlust je Heizkreis inkl. Anbindung | 250 mbar | Praxiswert (z. B. Uponor); EN 1264 legt keinen Wert fest |
+| max. Kreislänge | je Rohr, 16 × 2: 100 m | Praxiswert |
+| Spreizung im Auslegungsraum | σ ≤ 5 K | EN 1264-3 |
+| Oberflächentemperatur Fußboden | 29 / 33 (Bad) / 35 °C (Randzone) | EN 1264-2/-3 |
+| Rohrüberdeckung Zementestrich | 45 mm | DIN 18560-2 |
+| Mindestluftwechsel Wohnräume / Küche, Bad | 0,5 / 1,5 1/h | EN 12831-1 Anhang B / Annahme |
+| Temperatur beheizter Nachbarn, b_u unbeheizter Räume | 15 °C, 0,3–0,9 | Annahme (national festzulegen) |
 
 ## Tastenkürzel
 

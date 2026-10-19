@@ -179,7 +179,7 @@ export function dimensionSvg(a: Vec, b: Vec, offset: number, scale: number, cls 
   if (ang > 90.01 || ang < -89.99) ang += 180;
   const fs = Math.max(0.12, 11 / scale);
   const m = mul(add(A, B), 0.5);
-  return `<g class="p-dim${cls}" ${attrs}>${ln(a, add(A, mul(n, ext)), 'p-dim-ext')}${ln(b, add(B, mul(n, ext)), 'p-dim-ext')}${ln(A, B, 'p-dim-line')}${tk(A)}${tk(B)}<text x="${m.x.toFixed(4)}" y="${m.y.toFixed(4)}" transform="rotate(${ang.toFixed(2)} ${m.x.toFixed(4)} ${m.y.toFixed(4)}) translate(0 ${(-fs * 0.35).toFixed(4)})" class="p-dim-text" style="font-size:${fs.toFixed(4)}px">${fmt(L)}</text>${ln(A, B, 'p-hit-line')}</g>`;
+  return `<g class="p-dim${cls}" ${attrs}>${ln(a, add(A, mul(n, ext)), 'p-dim-ext')}${ln(b, add(B, mul(n, ext)), 'p-dim-ext')}${ln(A, B, 'p-dim-line')}${tk(A)}${tk(B)}<text x="${m.x.toFixed(4)}" y="${m.y.toFixed(4)}" transform="rotate(${ang.toFixed(2)} ${m.x.toFixed(4)} ${m.y.toFixed(4)}) translate(0 ${(-fs * 0.35).toFixed(4)})" class="p-dim-text" style="font-size:${fs.toFixed(4)}px;stroke-width:${(3 / scale).toFixed(4)}px">${fmt(L)}</text>${ln(A, B, 'p-hit-line')}</g>`;
 }
 
 function wallDimsSvg(floor: Floor, o: PlanRenderOpts): string {

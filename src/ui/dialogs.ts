@@ -1,3 +1,4 @@
+import { NORM_HINTS, NORM_STATUS, normDesignDefaults, normRows } from '../model/norms';
 import type { ConstructionSlot, Project } from '../model/types';
 import type { Store } from '../model/store';
 import { CLIMATE_LOCATIONS, PIPES, SCREEDS, SPACINGS } from '../model/catalog';
@@ -267,11 +268,11 @@ export function designFields(p: Project, res: DesignResult): string {
       [
         { kind: 'select', key: 'd.defaultFloorSystem', label: 'Standard für Fußbodenflächen', value: d.defaultFloorSystem, options: systemsFor('floor').map(([k, s]) => [k, s.label] as [string, string]) },
         { kind: 'select', key: 'd.pipe', label: 'Heizrohr (Nasssystem)', value: d.pipe, options: Object.entries(PIPES).map(([k, x]) => [k, x.label] as [string, string]) },
-        { kind: 'num', key: 'd.maxCircuitLength', label: 'max. Kreislänge inkl. Anbindung', value: d.maxCircuitLength, unit: 'm', digits: 0 },
-        { kind: 'num', key: 'd.maxPressureDrop', label: 'max. Druckverlust je Kreis', value: d.maxPressureDrop / 100, unit: 'mbar', digits: 0 },
+        { kind: 'num', key: 'd.maxCircuitLength', label: 'max. Kreislänge inkl. Anbindung', value: d.maxCircuitLength, unit: 'm', digits: 0, hint: NORM_HINTS.maxCircuitLength },
+        { kind: 'num', key: 'd.maxPressureDrop', label: 'max. Druckverlust je Kreis', value: d.maxPressureDrop / 100, unit: 'mbar', digits: 0, hint: NORM_HINTS.maxPressureDrop },
         { kind: 'num', key: 'd.maxOutlets', label: 'Abgänge je neuem Verteiler', value: d.maxOutlets, digits: 0 },
         { kind: 'check', key: 'd.balanceLengths', label: 'Kreislängen je Verteiler angleichen', value: d.balanceLengths },
-        { kind: 'num', key: 'd.wallDistance', label: 'Randabstand zur Wand', value: d.wallDistance * 100, unit: 'cm', digits: 1 },
+        { kind: 'num', key: 'd.wallDistance', label: 'Randabstand zur Wand', value: d.wallDistance * 100, unit: 'cm', digits: 1, hint: NORM_HINTS.wallDistance },
         { kind: 'select', key: 'd.rollLength', label: 'Rollenlänge', value: String(d.rollLength), options: [['120', '120 m'], ['200', '200 m'], ['240', '240 m'], ['500', '500 m'], ['600', '600 m']] },
       ],
       'dp',
@@ -281,7 +282,7 @@ export function designFields(p: Project, res: DesignResult): string {
     <section><h3>Temperaturen (EN 1264-3)</h3>${grid(
       [
         { kind: 'num', key: 'd.targetSupply', label: 'Ziel-Vorlauftemperatur', value: d.targetSupply, unit: '°C', digits: 1, hint: 'Wärmepumpe: 30–35 °C' },
-        { kind: 'num', key: 'd.sigmaDesign', label: 'Spreizung σ Auslegungsraum', value: d.sigmaDesign, unit: 'K', digits: 1 },
+        { kind: 'num', key: 'd.sigmaDesign', label: 'Spreizung σ Auslegungsraum', value: d.sigmaDesign, unit: 'K', digits: 1, hint: NORM_HINTS.sigmaDesign },
         { kind: 'check', key: 'd.autoSupply', label: 'Vorlauftemperatur automatisch ermitteln', value: d.supplyTempFixed == null },
         { kind: 'num', key: 'd.supplyTempFixed', label: 'feste Vorlauftemperatur', value: d.supplyTempFixed ?? res.thetaSupply, unit: '°C', digits: 1 },
         { kind: 'readout', label: 'aktuelle Vorlauftemperatur', value: `${num(res.thetaSupply, 1)} °C${res.thetaSupplyAuto ? ' (auto)' : ' (fest)'}` },
@@ -292,7 +293,7 @@ export function designFields(p: Project, res: DesignResult): string {
       [
         { kind: 'select', key: 'd.screed', label: 'Estrich', value: d.screed, options: Object.entries(SCREEDS).map(([k, s]) => [k, s.label] as [string, string]) },
         { kind: 'num', key: 'd.lambdaScreed', label: 'λ Estrich', value: d.lambdaScreed, unit: 'W/(m·K)', digits: 2 },
-        { kind: 'num', key: 'd.screedCover', label: 'Rohrüberdeckung Nasssystem s_ü', value: d.screedCover * 1000, unit: 'mm', digits: 0 },
+        { kind: 'num', key: 'd.screedCover', label: 'Rohrüberdeckung Nasssystem s_ü', value: d.screedCover * 1000, unit: 'mm', digits: 0, hint: NORM_HINTS.screedCover },
         { kind: 'num', key: 'd.milledCover', label: 'Rohrüberdeckung Fräs-System', value: d.milledCover * 1000, unit: 'mm', digits: 0 },
         { kind: 'num', key: 'd.insulationThickness', label: 'Dämmung unter System', value: d.insulationThickness * 1000, unit: 'mm', digits: 0 },
         { kind: 'num', key: 'd.lambdaInsulation', label: 'λ Dämmung', value: d.lambdaInsulation, unit: 'W/(m·K)', digits: 3 },
@@ -383,15 +384,31 @@ export function bindSpacingBoxes(root: HTMLElement, store: Store, after: () => v
   });
 }
 
+/** Normwerte und Annahmen mit Quelle und Verbindlichkeit */
+export function normTable(p: Project): string {
+  const rows = normRows(p)
+    .map((r) => `<tr><td>${esc(r.label)}</td><td class="num">${esc(r.value)}</td><td><span class="norm-badge st-${r.status}" title="${esc(NORM_STATUS[r.status].note)}">${esc(NORM_STATUS[r.status].label)}</span></td><td class="src">${esc(r.source)}</td></tr>`)
+    .join('');
+  return `<section><h3>Normwerte und Annahmen</h3><p class="note">Schwer zu beschaffende Werte sind mit dem europäischen Standard bzw. der gängigen Herstellerpraxis vorbelegt. Alle Werte bleiben änderbar; „Annahme“ bedeutet: im Einzelfall prüfen.</p>
+    <div class="table-wrap"><table class="norm-table"><thead><tr><th>Größe</th><th>Wert</th><th>Status</th><th>Quelle</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="actions"><button class="btn" data-act="norms">EU-Normwerte setzen (Druckverlust, Kreislänge, σ, Überdeckung, Randabstand)</button></div></section>`;
+}
+
 export function openDesignDialog(store: Store, onAutoLayout: () => void): void {
   const modal = openModal('Auslegung Flächenheizung', { wide: true });
   const render = () => {
     modal.body.innerHTML = `${designFields(store.project, store.design)}
+      ${normTable(store.project)}
       <section><h3>Automatische Auslegung</h3><p class="note">Ordnet alle Räume den Verteilern zu (Kapazität beachtet), führt die Anbindeleitungen um Wände und durch Türen und wählt die Verlegeabstände.</p>
       <div class="actions"><button class="btn primary" data-act="auto"${store.project.floors.some((f) => f.manifolds.length) ? '' : ' disabled title="Zuerst einen Verteiler setzen"'}>Jetzt automatisch verteilen</button></div></section>`;
   };
   render();
   modal.body.addEventListener('click', (e) => {
+    if ((e.target as HTMLElement).closest('[data-act="norms"]')) {
+      store.commit((p) => Object.assign(p.design, normDesignDefaults(p.design)));
+      render();
+      return;
+    }
     const t = (e.target as HTMLElement).closest('[data-act="auto"]') as HTMLButtonElement | null;
     if (!t || t.disabled) return;
     onAutoLayout();

@@ -16,6 +16,7 @@ import { StartWizard, type WizardEntry } from './ui/wizard';
 import { openBuildingDialog, openDesignDialog, openModal, resultTable, tableCsv, tableHtml, type ResultsTab } from './ui/dialogs';
 import { autosave, loadAutosave, offerDownload, parseProjectFile, safeFilename, toFile } from './io/persist';
 import { exportFloorSvg } from './io/export';
+import { buildReportHtml } from './io/report';
 import { dxfBackground, exportDxf, parseDxf } from './io/dxf';
 import { fromHausCad, isHausCad } from './io/hauscad';
 import { esc, level, num, parseNum } from './ui/format';
@@ -93,6 +94,7 @@ const props = new PropsPanel($('sidebar'), store, {
   deleteSelection: () => doDelete(),
   rotateSelection: () => store.commit((_p, f) => rotateSelection(f, store.selection, 90)),
   setPhase: (p) => setPhase(p),
+  openReport: () => openReport(),
   setTool: (t) => plan.setTool(t),
   toast,
 });
@@ -177,8 +179,9 @@ function renderTools(): void {
   else if (t === 'calibrate') h = `<span class="opt-note strong">Zwei Punkte einer bekannten Strecke im Grundrissbild anklicken</span>`;
   else if (t === 'manifold') h = `<span class="opt-note strong">Verteiler setzen – danach werden die Heizkreise automatisch verteilt</span>`;
   else if (t === 'route') h = `<span class="opt-note strong">Raum anklicken, Wegpunkte setzen, auf den Verteiler klicken</span>`;
-  opts.innerHTML = h;
-  opts.hidden = !h || layout === '3d';
+  if (!h && (t === 'select' || t === 'pan')) h = `<span class="opt-note">${t === 'select' ? 'Klicken wählt · Ziehen verschiebt · Rahmen wählt mehrere · ⇧ ergänzt' : 'Ziehen verschiebt die Ansicht · Mausrad zoomt'}</span>`;
+  opts.innerHTML = `<span class="opt-tool">${TOOLDEF[t].icon}${esc(TOOLDEF[t].label)}</span>${h}`;
+  opts.hidden = layout === '3d';
   renderLeft();
 }
 
@@ -350,7 +353,7 @@ function setLayout(m: Layout): void {
   } catch {
     /* ohne Speicher */
   }
-  $('tool-options').hidden = m === '3d' || !$('tool-options').innerHTML;
+  $('tool-options').hidden = m === '3d';
   requestAnimationFrame(() => {
     plan.render();
     if (m !== 'plan') view3d.rebuild();
@@ -657,6 +660,8 @@ async function runCommand(cmd: string): Promise<void> {
     }
     case 'export-csv':
       return exportCsv();
+    case 'report':
+      return openReport();
     case 'help':
       return showHelp();
   }
@@ -712,6 +717,32 @@ async function exportCsv(): Promise<void> {
   if ((await offerDownload(`${safeFilename(store.project.name)}_${names[resultsTab]}.csv`, csv, 'text/csv')) === 'saved') toast(`Tabelle „${names[resultsTab]}“ exportiert.`);
 }
 $('btn-csv').addEventListener('click', () => void exportCsv());
+$('btn-report').addEventListener('click', () => openReport());
+
+/** Auslegungsbericht DIN A4: Vorschau, Drucken (PDF) und Speichern als HTML */
+function openReport(): void {
+  const html = buildReportHtml(store.project, store.design, store.images);
+  const modal = openModal('Auslegungsbericht (DIN A4)', { wide: true });
+  modal.root.querySelector('.modal')!.classList.add('report');
+  modal.body.innerHTML = `<div class="report-bar"><p class="note">Vollständige Auslegung mit Heizlast, Temperaturen, Heizkreisen, Einstellwerten, Plänen und Normwerten – gesetzt für DIN A4 hoch.</p>
+    <div class="actions"><button class="btn primary" data-rep="print">Drucken / als PDF</button><button class="btn" data-rep="save">Als HTML speichern</button></div></div>
+    <iframe class="report-frame" title="Vorschau Auslegungsbericht"></iframe>`;
+  const frame = modal.body.querySelector<HTMLIFrameElement>('.report-frame')!;
+  frame.srcdoc = html;
+  modal.body.addEventListener('click', async (e) => {
+    const act = (e.target as HTMLElement).closest<HTMLElement>('[data-rep]')?.dataset.rep;
+    if (act === 'print') {
+      try {
+        frame.contentWindow?.focus();
+        frame.contentWindow?.print();
+        toast('Druckdialog: Ziel „Als PDF sichern“, Papier A4, Ränder „Standard“. Erscheint kein Dialog, den Bericht als HTML speichern und im Browser drucken.');
+      } catch {
+        toast('Drucken ist hier gesperrt – bitte als HTML speichern und im Browser drucken (⌘P).', 'warn');
+      }
+    }
+    if (act === 'save' && (await offerDownload(`${safeFilename(store.project.name)}_Auslegung_A4.html`, html, 'text/html')) === 'saved') toast('Auslegungsbericht gespeichert – im Browser öffnen und drucken (⌘P).');
+  });
+}
 
 // ---------- Kopfzeile, Status ----------
 function renderHeader(): void {
@@ -744,17 +775,38 @@ $('btn-redo').addEventListener('click', () => store.redo());
 $('btn-zoom-in').addEventListener('click', () => plan.zoom(1.25));
 $('btn-zoom-out').addEventListener('click', () => plan.zoom(0.8));
 $('btn-fit').addEventListener('click', () => plan.fit());
+const darkQuery = matchMedia('(prefers-color-scheme: dark)');
+const isDark = () => (document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark' : darkQuery.matches);
+/** Token-Farbe aufgelöst (light-dark wird erst an einer Eigenschaft berechnet) */
+function cssColor(token: string): string {
+  const probe = document.createElement('span');
+  probe.style.color = `var(${token})`;
+  probe.hidden = true;
+  document.body.appendChild(probe);
+  const c = getComputedStyle(probe).color;
+  probe.remove();
+  return c;
+}
+function applyTheme(): void {
+  const dark = isDark();
+  $('btn-theme').innerHTML = dark
+    ? '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg>'
+    : '<svg viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/></svg>';
+  $('btn-theme').title = dark ? 'Helles Farbschema' : 'Dunkles Farbschema';
+  view3d.setBackground(cssColor('--view-bg'), dark);
+  plan.render();
+}
 $('btn-theme').addEventListener('click', () => {
   const root = document.documentElement;
-  const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
-  root.dataset.theme = dark ? 'light' : 'dark';
+  root.dataset.theme = isDark() ? 'light' : 'dark';
   try {
     localStorage.setItem('hc.theme', root.dataset.theme);
   } catch {
     /* ohne Speicher */
   }
-  plan.render();
+  applyTheme();
 });
+darkQuery.addEventListener('change', () => !document.documentElement.dataset.theme && applyTheme());
 
 // ---------- Bearbeiten ----------
 function doDelete(): void {
@@ -922,6 +974,7 @@ try {
   /* ohne Speicher */
 }
 render3dCtl();
+applyTheme();
 setLayout(layout);
 renderTools();
 renderLevels();

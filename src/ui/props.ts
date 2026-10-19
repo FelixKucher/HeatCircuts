@@ -44,6 +44,7 @@ export interface PropsActions {
   openWallView(wallId: string, roomId: string | null): void;
   openBuilding(): void;
   openDesign(): void;
+  openReport(): void;
   deleteSelection(): void;
   rotateSelection(): void;
   setPhase(p: Phase): void;
@@ -194,7 +195,7 @@ export class PropsPanel {
         list = item(true, `Heizlast ${num(d.totals.heatLoad, 0)} W`) + item(d.totals.deficit < 5, d.totals.deficit > 5 ? `${num(d.totals.deficit, 0)} W ohne ausreichende Heizfläche` : 'alle Räume ausreichend versorgt') + item(true, `${d.totals.circuits} Heizkreise · ${num(d.totals.pipeTotal, 0)} m Rohr`);
         break;
     }
-    return `<div class="phase-guide"><div class="pg-head"><span class="pg-step">${idx + 1}/5</span><b>${esc(PHASES[idx].label)}</b></div><p>${esc(intro)}</p><ul class="pg-list">${list}</ul>${next ? `<button class="btn primary small" data-act="next-phase" data-phase="${next.id}">Weiter: ${esc(next.label)} →</button>` : ''}</div>`;
+    return `<div class="phase-guide"><div class="pg-head"><span class="pg-step">${idx + 1}/5</span><b>${esc(PHASES[idx].label)}</b></div><p>${esc(intro)}</p><ul class="pg-list">${list}</ul>${next ? `<button class="btn primary small" data-act="next-phase" data-phase="${next.id}">Weiter: ${esc(next.label)} →</button>` : '<button class="btn primary small" data-act="report">Auslegungsbericht DIN A4 →</button>'}</div>`;
   }
 
   // ---------- Geschoss und Projekt ----------
@@ -693,6 +694,8 @@ export class PropsPanel {
     switch (act) {
       case 'next-phase':
         return this.actions.setPhase(t.dataset.phase as Phase);
+      case 'report':
+        return this.actions.openReport();
       case 'painter':
         return this.actions.setTool('painter');
       case 'tool-manifold':

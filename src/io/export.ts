@@ -34,7 +34,7 @@ const EXPORT_CSS = `
 .heat-source rect{fill:#fff;stroke:#7a3fb3;stroke-width:.04}
 .heat-source .flame{fill:none;stroke:#7a3fb3;stroke-width:.04}
 .riser circle{fill:#fff;stroke:#7a3fb3;stroke-width:.03}.riser path{stroke:#7a3fb3;stroke-width:.03}
-text{font-family:Barlow,"Helvetica Neue",Arial,sans-serif;text-anchor:middle;fill:#1d2a35}
+text{font-family:"IBM Plex Sans","Helvetica Neue",Arial,sans-serif;text-anchor:middle;fill:#1d2a35}
 .lbl-title{font-weight:600}.lbl{fill:#45525d}.lbl-warn{fill:#b4361f}.lbl-muted{fill:#8a9399}.lbl-feeder{fill:#6b2f9e}
 .title-block text{text-anchor:start}
 .opening-cut{fill:#fff;stroke:none}.window-line{stroke:#1d2a35;stroke-width:.015}.door-leaf{stroke:#1d2a35;stroke-width:.025}.door-arc{fill:none;stroke:#8a9399;stroke-width:.012;stroke-dasharray:.05 .04}.garage-line{stroke:#1d2a35;stroke-width:.03;stroke-dasharray:.15 .08}

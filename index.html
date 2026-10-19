@@ -9,7 +9,13 @@
     <meta name="description" content="Haus zeichnen und Flächenheizung planen: Grundriss, Bauteile, Heizlast nach EN 12831, Heizkreise nach EN 1264 – metrisch, °C, für Europa." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" />
+    <script>
+      try {
+        var th = localStorage.getItem('hc.theme');
+        if (th === 'light' || th === 'dark') document.documentElement.dataset.theme = th;
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="app">
@@ -33,6 +39,8 @@
               <hr />
               <button data-cmd="image">Grundrissbild laden …</button>
               <button data-cmd="dxf">DXF-Grundriss laden …</button>
+              <hr />
+              <button data-cmd="report"><b>Auslegungsbericht DIN A4 …</b></button>
               <hr />
               <button data-cmd="export-svg">Plan als SVG</button>
               <button data-cmd="export-svg-bg">Plan mit Vorlage als SVG</button>
@@ -90,6 +98,7 @@
                 <button role="tab" data-tab="material">Material</button>
               </div>
               <div class="drawer-actions">
+                <button class="btn small primary" id="btn-report">Bericht DIN A4</button>
                 <button class="btn small" id="btn-csv">CSV exportieren</button>
                 <button class="icon-btn" id="btn-results-close" aria-label="Ergebnisse schließen"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></svg></button>
               </div>
