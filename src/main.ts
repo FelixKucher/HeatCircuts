@@ -164,9 +164,37 @@ const PHASE_TOOLS: Record<Phase, (Tool | '|')[]> = {
   results: ['select', 'pan'],
 };
 
+// Modus „Heizung“: 2D-Plan für die Loop-Planung; „Erweitert“: zusätzlich Haus-CAD (Möbel, Treppen) und 3D
+type Mode = 'loop' | 'full';
+let mode: Mode = 'loop';
+const ADV_TOOLS = new Set<Tool>(['furniture', 'stair']);
+function toolsFor(ph: Phase): (Tool | '|')[] {
+  const list = PHASE_TOOLS[ph].filter((t) => t === '|' || mode === 'full' || !ADV_TOOLS.has(t));
+  return list.filter((t, i) => t !== '|' || (i > 0 && i < list.length - 1 && list[i - 1] !== '|'));
+}
+function setMode(m: Mode, persist = true): void {
+  mode = m;
+  document.documentElement.dataset.mode = m;
+  plan.hidden = new Set(m === 'loop' ? ['furniture'] : []);
+  $('btn-mode').setAttribute('aria-pressed', String(m === 'full'));
+  if (persist)
+    try {
+      localStorage.setItem('hc.mode', m);
+    } catch {
+      /* ohne Speicher */
+    }
+  if (m === 'loop') {
+    if (store.selection.some((x) => x.kind === 'furniture')) store.select(store.selection.filter((x) => x.kind !== 'furniture'));
+    if (!toolsFor(store.phase).includes(plan.tool)) plan.setTool('select');
+    if (layout !== 'plan') setLayout('plan');
+  }
+  renderTools();
+  plan.render();
+}
+
 function renderTools(): void {
   const t = plan.tool;
-  $('toolbar').innerHTML = PHASE_TOOLS[store.phase]
+  $('toolbar').innerHTML = toolsFor(store.phase)
     .map((id) => (id === '|' ? '<span class="tool-sep"></span>' : `<button class="tool${t === id ? ' is-active' : ''}" data-tool="${id}" title="${esc(TOOLDEF[id].label)} (${TOOLDEF[id].key})" aria-pressed="${t === id}">${TOOLDEF[id].icon}<span>${esc(TOOLDEF[id].label)}</span></button>`))
     .join('');
   const opts = $('tool-options');
@@ -217,7 +245,7 @@ function renderLeft(): void {
   const lp = $('leftpanel');
   const f = store.floor;
   const d = store.design;
-  if (store.phase === 'build') {
+  if (store.phase === 'build' && mode === 'full') {
     const items = CATALOG.filter((c) => !catQuery || c.name.toLowerCase().includes(catQuery) || c.category.toLowerCase().includes(catQuery));
     const focus = document.activeElement?.id === 'cat-search';
     lp.innerHTML = `<div class="lp-head"><h2>Möbel und Ausstattung</h2></div><input id="cat-search" type="search" placeholder="Katalog durchsuchen …" value="${esc(catQuery)}" autocomplete="off"/>
@@ -239,7 +267,8 @@ function renderLeft(): void {
       const rr = d.rooms.get(r.id);
       let state = '';
       let cls = '';
-      if (store.phase === 'parts') state = r.heated ? `${num(r.thetaI, 0)} °C · ${num(rr?.heatLoad.total ?? 0, 0)} W` : 'unbeheizt';
+      if (store.phase === 'build') state = `${num(rr?.area ?? 0, 1)} m²${r.heated ? '' : ' · unbeheizt'}`;
+      else if (store.phase === 'parts') state = r.heated ? `${num(r.thetaI, 0)} °C · ${num(rr?.heatLoad.total ?? 0, 0)} W` : 'unbeheizt';
       else if (store.phase === 'heating') {
         state = r.heated ? (r.surfaces.length ? r.surfaces.map((s) => ({ floor: 'Boden', wall: 'Wand', ceiling: 'Decke' })[s.kind]).join(' + ') : 'keine Heizfläche') : 'unbeheizt';
         cls = r.heated && !r.surfaces.length ? 'warn' : '';
@@ -258,7 +287,11 @@ function renderLeft(): void {
       .flatMap((fl) => fl.manifolds.map((m) => ({ fl, m, mr: d.manifolds.find((x) => x.manifoldId === m.id) })))
       .map(({ fl, m, mr }) => `<tr data-sel="manifold|${m.id}|${fl.id}"><td>${esc(m.name)}</td><td class="r">${mr?.outlets ?? 0}/${m.maxOutlets} · ${num(mr?.heat ?? 0, 0)} W</td></tr>`)
       .join('') || '<tr><td colspan="2" class="muted">noch kein Verteiler</td></tr>'}</tbody></table></div>`;
-  lp.innerHTML = `<div class="lp-head"><h2>Räume · ${esc(f.name)}</h2></div><div class="fur-list rooms"><table><tbody>${rows || '<tr><td class="muted">keine Räume</td></tr>'}</tbody></table></div>${extra}`;
+  const importCard =
+    store.phase === 'build'
+      ? `<div class="lp-import"><h3>Vorlage für ${esc(f.name)}</h3><div class="imp-grid"><button class="btn small" data-cmd="pdf">PDF</button><button class="btn small" data-cmd="dxf">DXF</button><button class="btn small" data-cmd="image">Bild</button><button class="btn small" data-cmd="ifc">IFC</button></div><p class="note">Grundriss laden, Maßstab prüfen, dann Räume aufziehen (R). IFC übernimmt Räume und Wände direkt.</p></div>`
+      : '';
+  lp.innerHTML = `${importCard}<div class="lp-head"><h2>Räume · ${esc(f.name)}</h2></div><div class="fur-list rooms"><table><tbody>${rows || '<tr><td class="muted">keine Räume</td></tr>'}</tbody></table></div>${extra}`;
 }
 
 $('leftpanel').addEventListener('input', (e) => {
@@ -270,6 +303,8 @@ $('leftpanel').addEventListener('input', (e) => {
 });
 $('leftpanel').addEventListener('click', (e) => {
   const t = e.target as HTMLElement;
+  const cmd = t.closest<HTMLElement>('[data-cmd]');
+  if (cmd) return void runCommand(cmd.dataset.cmd!);
   const cat = t.closest<HTMLElement>('[data-cat]');
   if (cat) {
     plan.catalogKey = cat.dataset.cat!;
@@ -345,6 +380,7 @@ function addFloorDialog(): void {
 
 // ---------- Layout: Plan / geteilt / 3D ----------
 function setLayout(m: Layout): void {
+  if (mode === 'loop') m = 'plan';
   layout = m;
   $('stage').dataset.layout = m;
   document.querySelectorAll<HTMLElement>('#layout-switch button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.layout === m)));
@@ -531,6 +567,122 @@ $('file-dxf').addEventListener('change', async (e) => {
   }
 });
 
+$('file-pdf').addEventListener('change', async (e) => {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file) return;
+  try {
+    const { openPdf } = await import('./io/pdf');
+    openPdfDialog(await openPdf(await file.arrayBuffer()), file.name);
+  } catch (err) {
+    toast(`PDF nicht lesbar: ${(err as Error).message}`, 'warn');
+  }
+});
+
+$('file-ifc').addEventListener('change', async (e) => {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file) return;
+  toast(`IFC „${file.name}“ wird gelesen …`);
+  try {
+    const [{ ifcToProject }, { locateWasm }] = await Promise.all([import('./io/ifc'), import('./io/ifc-wasm')]);
+    const { project, stats } = await ifcToProject(new Uint8Array(await file.arrayBuffer()), { locateWasm });
+    const modal = openModal(`IFC-Modell · ${file.name}`);
+    const cur = store.project;
+    modal.body.innerHTML = `<p><b>${esc(project.name)}</b></p>
+      <dl class="kv-list"><dt>Geschosse</dt><dd>${project.floors.map((f) => `${esc(f.name)} (${level(f.elevation)})`).join(', ')}</dd><dt>Räume</dt><dd>${stats.spaces}</dd><dt>Wände</dt><dd>${stats.walls}</dd><dt>Fenster / Türen</dt><dd>${stats.windows} / ${stats.doors}</dd></dl>
+      ${stats.warnings.length ? `<ul class="warnings">${stats.warnings.slice(0, 6).map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}
+      <label class="field check"><input type="checkbox" id="ifc-keep"${cur.isExample ? '' : ' checked'}/><span class="lab">Standort, Bauteile und Auslegung aus dem aktuellen Projekt übernehmen</span></label>
+      <p class="note">Das IFC-Modell wird als neues Projekt geöffnet. Raumarten sind aus den Raumnamen abgeleitet; Wandarten (außen, innen) werden automatisch bestimmt. Bitte danach Räume und Bauteile prüfen.</p>
+      <div class="actions end"><button class="btn" data-close-dlg>Abbrechen</button><button class="btn primary" data-apply>Als Projekt öffnen</button></div>`;
+    modal.body.querySelector('[data-close-dlg]')!.addEventListener('click', () => modal.close());
+    modal.body.querySelector('[data-apply]')!.addEventListener('click', () => {
+      if ((modal.body.querySelector('#ifc-keep') as HTMLInputElement).checked) {
+        project.site = structuredClone(cur.site);
+        project.building = structuredClone(cur.building);
+        project.design = structuredClone(cur.design);
+        project.roof = structuredClone(cur.roof);
+        project.terrain = structuredClone(cur.terrain);
+      }
+      modal.close();
+      loadProject(project, {}, `IFC übernommen: ${project.floors.length} Geschosse, ${stats.spaces} Räume, ${stats.walls} Wände, ${stats.windows} Fenster, ${stats.doors} Türen.`);
+      setPhase('build');
+    });
+  } catch (err) {
+    toast(`IFC nicht lesbar: ${(err as Error).message}`, 'warn');
+  }
+});
+
+/** PDF-Seite wählen, Maßstab prüfen und als Vorlage des aktuellen Geschosses übernehmen */
+function openPdfDialog(doc: import('pdfjs-dist/legacy/build/pdf.mjs').PDFDocumentProxy, name: string): void {
+  const modal = openModal(`PDF-Grundriss · ${name}`, { wide: true });
+  const pages = Math.min(doc.numPages, 24);
+  let page = 1;
+  modal.body.innerHTML = `<section><h3>Seite</h3><div class="pdf-pages">${Array.from({ length: pages }, (_, i) => `<button class="pdf-page${i === 0 ? ' on' : ''}" data-page="${i + 1}"><span class="pdf-thumb"></span><small>Seite ${i + 1}</small></button>`).join('')}</div>${doc.numPages > pages ? `<p class="note">Es werden die ersten ${pages} von ${doc.numPages} Seiten gezeigt.</p>` : ''}</section>
+    <section><h3>Maßstab</h3><div class="fields cols"><label class="field"><span class="lab">Planmaßstab</span><select id="pdf-scale"><option value="0">unbekannt – mit zwei Punkten kalibrieren</option>${[20, 25, 50, 75, 100, 125, 200, 250, 500].map((n) => `<option value="${n}">1 : ${n}</option>`).join('')}</select></label><div class="field"><span class="lab">Papierformat</span><span class="val" id="pdf-paper">–</span></div></div>
+    <p class="note" id="pdf-scale-note">Bei bekanntem Maßstab ist die Vorlage sofort maßstäblich. Prüfen Sie danach eine bekannte Länge mit dem Werkzeug Maßstab (K).</p></section>
+    <div class="actions end"><button class="btn" data-close-dlg>Abbrechen</button><button class="btn primary" data-apply>Als Vorlage für ${esc(store.floor.name)} übernehmen</button></div>`;
+  const sel = modal.body.querySelector<HTMLSelectElement>('#pdf-scale')!;
+  const choosePage = async (n: number) => {
+    page = n;
+    modal.body.querySelectorAll('.pdf-page').forEach((b) => b.classList.toggle('on', Number((b as HTMLElement).dataset.page) === n));
+    const { pageText, detectScale, PT_TO_M } = await import('./io/pdf');
+    const pg = await doc.getPage(n);
+    const vp = pg.getViewport({ scale: 1 });
+    const fmtMm = (pt: number) => Math.round(pt * PT_TO_M * 1000);
+    $('pdf-paper').textContent = `${fmtMm(vp.width)} × ${fmtMm(vp.height)} mm`;
+    const found = detectScale(await pageText(doc, n));
+    sel.value = String(found ?? 0);
+    $('pdf-scale-note').textContent = found
+      ? `Maßstab 1 : ${found} aus dem Plantext erkannt. Bitte danach eine bekannte Länge mit dem Werkzeug Maßstab (K) prüfen.`
+      : 'Kein Maßstab im Plantext gefunden – Maßstab wählen oder nach dem Übernehmen zwei Punkte mit bekanntem Abstand anklicken.';
+  };
+  void (async () => {
+    const { renderPdfPage } = await import('./io/pdf');
+    await choosePage(1);
+    for (let i = 1; i <= pages && document.body.contains(modal.root); i++) {
+      const r = await renderPdfPage(doc, i, 240, 'image/jpeg');
+      const slot = modal.body.querySelector<HTMLElement>(`.pdf-page[data-page="${i}"] .pdf-thumb`);
+      if (slot) slot.style.backgroundImage = `url(${r.dataUrl})`;
+    }
+  })();
+  modal.body.addEventListener('click', async (e) => {
+    const t = e.target as HTMLElement;
+    const pb = t.closest<HTMLElement>('[data-page]');
+    if (pb) return void choosePage(Number(pb.dataset.page));
+    if (t.closest('[data-close-dlg]')) return modal.close();
+    const apply = t.closest<HTMLButtonElement>('[data-apply]');
+    if (!apply) return;
+    apply.disabled = true;
+    apply.textContent = 'Seite wird aufbereitet …';
+    try {
+      const { renderPdfPage } = await import('./io/pdf');
+      const r = await renderPdfPage(doc, page, 5000);
+      const n = Number(sel.value);
+      const imageId = uid('img');
+      store.images[imageId] = r.dataUrl;
+      const bounds = floorBounds(store.floor, store.project);
+      store.commit((_p, f) => {
+        f.background = { imageId, widthPx: r.widthPx, heightPx: r.heightPx, pxPerM: n ? r.widthPx / (r.paperW * n) : r.widthPx / 20, offset: bounds ? v(bounds.min.x - 1, bounds.min.y - 1) : v(-1, -1), opacity: 0.6, visible: true, locked: false, calibrated: n > 0 };
+      });
+      modal.close();
+      if (store.phase !== 'build') setPhase('build');
+      plan.fit();
+      if (n) toast(`PDF-Seite ${page} maßstäblich (1 : ${n}) übernommen. Räume aufziehen (R) oder Wände nachzeichnen (W).`);
+      else {
+        plan.setTool('calibrate');
+        toast('PDF übernommen. Zwei Punkte mit bekanntem Abstand anklicken, um den Maßstab festzulegen.');
+      }
+    } catch (err) {
+      apply.disabled = false;
+      apply.textContent = 'Übernehmen';
+      toast(`PDF-Seite konnte nicht gerastert werden: ${(err as Error).message}`, 'warn');
+    }
+  });
+}
+
 $('file-project').addEventListener('change', async (e) => {
   const input = e.target as HTMLInputElement;
   const file = input.files?.[0];
@@ -625,6 +777,10 @@ async function runCommand(cmd: string): Promise<void> {
       return $('file-image').click();
     case 'dxf':
       return $('file-dxf').click();
+    case 'pdf':
+      return $('file-pdf').click();
+    case 'ifc':
+      return $('file-ifc').click();
     case 'sample': {
       const s = createSampleProject();
       return loadProject(s.project, s.images, 'Beispielprojekt geladen.');
@@ -796,6 +952,13 @@ function applyTheme(): void {
   view3d.setBackground(cssColor('--view-bg'), dark);
   plan.render();
 }
+$('btn-mode').addEventListener('click', () => {
+  setMode(mode === 'full' ? 'loop' : 'full');
+  if (mode === 'full') {
+    setLayout('split');
+    toast('Erweitert: Möbel, Treppen und 3D-Ansicht sind eingeblendet.');
+  }
+});
 $('btn-theme').addEventListener('click', () => {
   const root = document.documentElement;
   root.dataset.theme = isDark() ? 'light' : 'dark';
@@ -926,7 +1089,7 @@ window.addEventListener('keydown', (e) => {
   if (k === '3') return setLayout('3d');
   if (k === 'q' && store.selection.length && store.phase === 'build') return store.commit((_p, f) => rotateSelection(f, store.selection, e.shiftKey ? -90 : 90));
   const tool = KEY_TOOLS[k];
-  if (tool && PHASE_TOOLS[store.phase].includes(tool)) {
+  if (tool && toolsFor(store.phase).includes(tool)) {
     if (layout === '3d') setLayout('split');
     if (wallView.isOpen) wallView.close();
     plan.setTool(tool);
@@ -968,6 +1131,7 @@ store.on((reason) => {
 try {
   const th = localStorage.getItem('hc.theme');
   if (th) document.documentElement.dataset.theme = th;
+  if (localStorage.getItem('hc.mode') === 'full') mode = 'full';
   const lay = localStorage.getItem('hc.layout') as Layout | null;
   if (lay === 'plan' || lay === 'split' || lay === '3d') layout = lay;
 } catch {
@@ -975,6 +1139,7 @@ try {
 }
 render3dCtl();
 applyTheme();
+setMode(mode, false);
 setLayout(layout);
 renderTools();
 renderLevels();

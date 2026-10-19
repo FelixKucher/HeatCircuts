@@ -3401,3 +3401,113 @@ table.norm-table td.src {
   border-radius: var(--radius);
   background: #e9edf0;
 }
+
+/* Modus „Heizung“ (Loop-Planung) vs. „Erweitert“ (Haus-CAD, 3D) */
+:root[data-mode='loop'] #layout-switch,
+:root[data-mode='loop'] .menu-adv,
+:root[data-mode='loop'] .p-l-furniture,
+:root[data-mode='loop'] .splitter,
+:root[data-mode='loop'] .view-host {
+  display: none !important;
+}
+:root[data-mode='loop'] .plan-host {
+  flex: 1 1 auto;
+}
+.mode-chip {
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink-2);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font: 600 13px var(--font-cond);
+  cursor: pointer;
+}
+.mode-chip::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 7px;
+  border: 1.5px solid currentColor;
+  vertical-align: 0;
+}
+.mode-chip[aria-pressed='true'] {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+.mode-chip[aria-pressed='true']::before {
+  background: currentColor;
+}
+.lp-import {
+  padding: 10px 12px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+.lp-import h3 {
+  margin: 0 0 8px;
+  font: 600 12px var(--font-cond);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.imp-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+.imp-grid .btn {
+  justify-content: center;
+  padding-inline: 0;
+}
+.lp-import .note {
+  margin: 8px 0 0;
+}
+
+/* PDF-Seitenwahl */
+.pdf-pages {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 8px;
+}
+.pdf-page {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: stretch;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  cursor: pointer;
+  color: var(--ink-2);
+}
+.pdf-page.on {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+  color: var(--accent-text);
+}
+.pdf-thumb {
+  display: block;
+  aspect-ratio: 1.414;
+  background: #fff center / contain no-repeat;
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
+}
+
+/* IFC-Vorschau */
+.kv-list {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  margin: 0;
+}
+.kv-list dt {
+  color: var(--ink-3);
+}
+.kv-list dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}

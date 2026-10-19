@@ -9,6 +9,24 @@ Haus zeichnen und Flächenheizung planen in einer Anwendung – auf Europa ausge
 
 Ein CAD-Grundriss in der Art von Sweet Home 3D und RoomSketcher und die Heizungsplanung teilen sich ein Datenmodell. Spätere Änderungen am Grundriss bleiben daher mit allen Bauteil- und Heizungsangaben verbunden. Die App läuft vollständig im Browser, ohne Server und ohne Konto.
 
+## Zwei Modi
+
+| Modus | Umfang |
+| --- | --- |
+| **Heizung** (Standard) | 2D-Plan für die Loop-Planung wie in LoopCAD: Vorlage laden (PDF, DXF, Bild, IFC), Räume aufziehen oder übernehmen, Wände, Türen, Fenster, Lufträume, Bemaßung, Heizlast, Heizflächen, Verteiler, Loops, Abgleich, Bericht. Möbel, Treppenwerkzeug und 3D sind ausgeblendet. |
+| **Erweitert** | zusätzlich Haus-CAD (Möbelkatalog, Treppen) und 3D-Ansicht mit Rundgang, PNG- und GLB-Export. |
+
+Der Schalter **Erweitert** in der Kopfleiste wechselt den Modus; die Daten bleiben in beiden Modi dieselben.
+
+## Vorlagen und Import
+
+| Quelle | Ergebnis |
+| --- | --- |
+| **PDF** | Seite wählen (Vorschaubilder), Planmaßstab wird aus dem Schriftfeld erkannt („M 1:100“), sonst wählbar oder per Zweipunkt-Kalibrierung; Seite wird mit 5000 px gerastert und maßstäblich hinterlegt. pdf.js (Apache-2.0), Legacy-Build für Safari/WebKit. |
+| **DXF** | maßstäbliche Vektorvorlage (siehe Austausch) |
+| **Bild** | PNG, JPG, WebP, GIF, SVG mit Kalibrierung und Raumerkennung |
+| **IFC (BIM)** | Geschosse aus `IfcBuildingStorey`, Räume aus `IfcSpace` (Umriss der Körperunterseite, Raumart aus dem Namen), Wände als Achse und Dicke (kleinstes umschließendes Rechteck, Ecken auf den Achsenschnitt verbunden), Fenster und Türen mit Breite, Höhe und Brüstung. web-ifc (MPL-2.0), wird erst beim Import geladen. Geprüft mit dem FZK-Haus (KIT). |
+
 ## Ablauf
 
 **Projekt › Neues Projekt** startet den Assistenten:

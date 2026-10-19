@@ -102,6 +102,8 @@ export class PlanView {
   tool: Tool = 'select';
   openingStyle: OpeningStyle = 'door';
   catalogKey = 'sofa3';
+  /** im Modus „Heizung“ ausgeblendete Objektarten */
+  hidden = new Set<SelKind>();
   stairType: StairType = 'straight';
   view = { x: -2, y: -2, s: 60 };
   painter: FormatData | null = null;
@@ -473,7 +475,7 @@ export class PlanView {
   }
 
   private hit(e: { clientX: number; clientY: number }): SelItem | null {
-    const allowed = PICKABLE[this.store.phase];
+    const allowed = PICKABLE[this.store.phase].filter((k) => !this.hidden.has(k));
     const els = document.elementsFromPoint(e.clientX, e.clientY);
     for (const start of els) {
       let el: Element | null = start;
@@ -966,7 +968,7 @@ export class PlanView {
       }
       const inR = (q: Vec) => q.x >= x0 && q.x <= x1 && q.y >= y0 && q.y <= y1;
       const l = s.floor;
-      const allowed = PICKABLE[s.phase];
+      const allowed = PICKABLE[s.phase].filter((k) => !this.hidden.has(k));
       const items: SelItem[] = d.add ? [...s.selection] : [];
       const push = (kind: SelKind, id: string) => allowed.includes(kind) && items.push({ kind, id });
       for (const w of l.walls) if (inR(w.a) && inR(w.b)) push('wall', w.id);

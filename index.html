@@ -37,16 +37,18 @@
               <button data-cmd="open">Öffnen … <kbd>⌘O</kbd></button>
               <button data-cmd="save">Speichern <kbd>⌘S</kbd></button>
               <hr />
-              <button data-cmd="image">Grundrissbild laden …</button>
+              <button data-cmd="pdf">PDF-Grundriss laden …</button>
               <button data-cmd="dxf">DXF-Grundriss laden …</button>
+              <button data-cmd="image">Grundrissbild laden …</button>
+              <button data-cmd="ifc">IFC-Modell (BIM) importieren …</button>
               <hr />
               <button data-cmd="report"><b>Auslegungsbericht DIN A4 …</b></button>
               <hr />
               <button data-cmd="export-svg">Plan als SVG</button>
               <button data-cmd="export-svg-bg">Plan mit Vorlage als SVG</button>
               <button data-cmd="export-dxf">Plan als DXF (AutoCAD, CADCraft)</button>
-              <button data-cmd="export-png">3D-Ansicht als PNG</button>
-              <button data-cmd="export-glb">3D-Modell als GLB</button>
+              <button class="menu-adv" data-cmd="export-png">3D-Ansicht als PNG</button>
+              <button class="menu-adv" data-cmd="export-glb">3D-Modell als GLB</button>
               <button data-cmd="export-csv">Ergebnistabelle als CSV</button>
               <hr />
               <button data-cmd="sample">Beispielprojekt laden</button>
@@ -57,6 +59,7 @@
           <button class="btn ghost" id="btn-design">Auslegung</button>
         </nav>
         <ol class="phasebar" id="phasebar" aria-label="Arbeitsschritte"></ol>
+        <button class="mode-chip" id="btn-mode" aria-pressed="false" title="Haus-CAD (Möbel, Treppen) und 3D-Ansicht ein- oder ausblenden">Erweitert</button>
         <div class="view-switch" role="group" aria-label="Ansicht" id="layout-switch">
           <button data-layout="plan" aria-pressed="false" title="Nur Grundriss (1)">Plan</button>
           <button data-layout="split" aria-pressed="true" title="Grundriss und 3D (2)">Geteilt</button>
@@ -118,6 +121,8 @@
     <div id="toasts" class="toasts" aria-live="polite"></div>
     <input type="file" id="file-image" accept="image/*" hidden />
     <input type="file" id="file-dxf" accept=".dxf" hidden />
+    <input type="file" id="file-pdf" accept="application/pdf,.pdf" hidden />
+    <input type="file" id="file-ifc" accept=".ifc" hidden />
     <input type="file" id="file-project" accept=".json,.hauscad,application/json" hidden />
     <script type="module" src="/src/main.ts"></script>
   </body>
