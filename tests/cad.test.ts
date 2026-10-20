@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { newFloor, newProject, newWall } from '../src/model/factory';
+import { migrateProject, newFloor, newProject, newWall } from '../src/model/factory';
 import { wallOutlines } from '../src/cad/walls';
 import { addRectRoom, addWallChain } from '../src/cad/edit';
-import { newStair, stairGeometry } from '../src/cad/stairs';
 import { applyFormat, pickFormat } from '../src/cad/painter';
 import { exportDxf, parseDxf } from '../src/io/dxf';
-import { fromHausCad } from '../src/io/hauscad';
 import { createSampleProject } from '../src/model/sample';
 import { normalizeProject } from '../src/model/normalize';
 import { estimateClimate } from '../src/calc/climate';
@@ -80,22 +78,21 @@ describe('Wände und Räume', () => {
   });
 });
 
-describe('Treppen und Deckenöffnungen', () => {
-  it('Steigungen aus der Geschosshöhe, Treppenloch im Geschoss darüber', () => {
-    const s = newStair('straight', v(2, 2));
-    s.length = 4.3;
-    const g = stairGeometry(s, 2.8);
-    expect(g.steps).toBe(16);
-    expect(g.treads[g.steps - 1].z).toBeCloseTo(2.8, 6);
+describe('Migration ohne Haus-CAD', () => {
+  it('verwirft Möbel und Treppen, Treppenlöcher bleiben als Aussparung', () => {
     const p = newProject();
-    p.floors[0].stairs.push(s);
     p.floors.push(newFloor('OG', 2.9));
-    normalizeProject(p);
-    expect(p.floors[1].voids).toHaveLength(1);
-    expect(p.floors[1].voids[0].stairId).toBe(s.id);
-    p.floors[0].stairs = [];
-    normalizeProject(p);
-    expect(p.floors[1].voids).toHaveLength(0);
+    const raw = JSON.parse(JSON.stringify(p));
+    raw.floors[0].furniture = [{ id: 'f1' }];
+    raw.floors[0].stairs = [{ id: 's1' }];
+    raw.floors[1].voids = [{ id: 'v-s1', stairId: 's1', kind: 'stair', polygon: [v(1, 1), v(2, 1), v(2, 4), v(1, 4)] }];
+    const m = migrateProject(raw);
+    expect('furniture' in m.floors[0]).toBe(false);
+    expect('stairs' in m.floors[0]).toBe(false);
+    expect(m.floors[1].voids).toHaveLength(1);
+    expect('stairId' in m.floors[1].voids[0]).toBe(false);
+    normalizeProject(m);
+    expect(m.floors[1].voids).toHaveLength(1);
   });
 });
 
@@ -141,7 +138,7 @@ describe('Austausch', () => {
   it('Beispielhaus: Heizkreise, Treppenloch, Wandarten', () => {
     const { project: p } = createSampleProject();
     const [eg, og] = p.floors;
-    expect(og.voids.filter((x) => x.stairId)).toHaveLength(1);
+    expect(og.voids.filter((x) => x.kind === 'stair')).toHaveLength(1);
     expect(eg.walls.filter((w) => w.kind === 'exterior').length).toBeGreaterThanOrEqual(8);
     expect(eg.walls.some((w) => w.openings.some((o) => o.kind === 'entrance'))).toBe(true);
     expect(eg.rooms.map((r) => r.type)).toEqual(expect.arrayContaining(['kueche', 'flur', 'wc', 'technik', 'wohnen']));
@@ -149,47 +146,5 @@ describe('Austausch', () => {
     const total = eg.rooms.reduce((a, r) => a + roomHeatLoad(p, r, eg, ctx).total, 0);
     expect(total).toBeGreaterThan(1500);
     expect(p.floors.flatMap((f) => f.routes).length).toBeGreaterThan(3);
-  });
-
-  it('HausCAD-Datei wird übernommen', () => {
-    const src = {
-      format: 'hauscad',
-      version: 1,
-      name: 'Test',
-      levels: [
-        {
-          id: 'L1',
-          name: 'EG',
-          elevation: 0,
-          height: 2.8,
-          floorThickness: 0.25,
-          visible: true,
-          walls: [
-            { id: 'w1', a: v(0, 0), b: v(4, 0), thickness: 0.3, height: null, colorLeft: '#fff', colorRight: '#eee', openings: [{ id: 'o1', type: 'window', offset: 2, width: 1.2, height: 1.3, sill: 0.9, side: 'left', hinge: 'a', color: '#fff' }] },
-            { id: 'w2', a: v(4, 0), b: v(4, 3), thickness: 0.3, height: null, openings: [] },
-            { id: 'w3', a: v(4, 3), b: v(0, 3), thickness: 0.3, height: null, openings: [] },
-            { id: 'w4', a: v(0, 3), b: v(0, 0), thickness: 0.3, height: null, openings: [] },
-          ],
-          rooms: [{ id: 'r1', name: 'Bad', polygon: [v(0.15, 0.15), v(3.85, 0.15), v(3.85, 2.85), v(0.15, 2.85)], floorFinish: 'fliesen', floorColor: '#ddd', ceilingColor: '#fff', showFloor: true, showCeiling: true, labelOffset: v(0, 0) }],
-          furniture: [{ id: 'f1', catalog: 'manifold', name: 'HKV', pos: v(1, 1), angle: 0, width: 0.75, depth: 0.15, height: 0.75, elevation: 0.3, color: '#eee', mirrored: false, visible: true }],
-          stairs: [],
-          dimensions: [],
-          labels: [],
-          background: null,
-        },
-      ],
-      roof: { type: 'gable', pitch: 30, ridge: 'x', overhang: 0.4, color: '#933', kneeWall: 0.4 },
-      settings: { wallThickness: 0.3, wallHeight: 2.5, gridStep: 0.25, showGrid: true, magnetism: true, north: 20, showRoomArea: true, showWallDims: true },
-      ground: { show: true, color: '#9a9', level: -0.3 },
-    };
-    const { project } = fromHausCad(src);
-    const f = project.floors[0];
-    expect(project.version).toBe(3);
-    expect(f.rooms[0].type).toBe('bad');
-    expect(f.walls.every((w) => w.kind === 'exterior')).toBe(true);
-    expect(f.walls[0].openings[0].kind).toBe('window');
-    expect(f.manifolds).toHaveLength(1);
-    expect(project.site.north).toBe(20);
-    expect(project.terrain.gradeLow).toBe(-0.3);
   });
 });

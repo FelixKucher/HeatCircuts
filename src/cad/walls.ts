@@ -165,7 +165,6 @@ export function floorContentBounds(l: Floor): { min: Vec; max: Vec } | null {
   const pts: Vec[] = [];
   for (const w of l.walls) pts.push(w.a, w.b);
   for (const r of l.rooms) pts.push(...r.polygon);
-  for (const f of l.furniture) pts.push(f.pos);
   if (!pts.length) return null;
   let minX = Infinity;
   let minY = Infinity;

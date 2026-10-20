@@ -4,7 +4,7 @@ import type { Floor, ImageStore, Project } from './types';
 import { computeDesign, type DesignResult } from '../calc/design';
 import { normalizeProject } from './normalize';
 
-export type SelKind = 'wall' | 'opening' | 'room' | 'furniture' | 'stair' | 'dimension' | 'label' | 'void' | 'manifold' | 'heatSource' | 'route';
+export type SelKind = 'wall' | 'opening' | 'room' | 'dimension' | 'label' | 'void' | 'manifold' | 'heatSource' | 'route';
 export interface SelItem {
   kind: SelKind;
   id: string;
@@ -15,11 +15,11 @@ export interface SelItem {
 /** Arbeitsphasen: Grundriss → Bauteile → Heizflächen → Heizkreise → Ergebnisse */
 export type Phase = 'build' | 'parts' | 'heating' | 'circuits' | 'results';
 export const PHASES: { id: Phase; label: string; short: string }[] = [
-  { id: 'build', label: 'Grundriss', short: '1' },
-  { id: 'parts', label: 'Bauteile', short: '2' },
+  { id: 'build', label: 'Plan', short: '1' },
+  { id: 'parts', label: 'Heizlast', short: '2' },
   { id: 'heating', label: 'Heizflächen', short: '3' },
   { id: 'circuits', label: 'Heizkreise', short: '4' },
-  { id: 'results', label: 'Ergebnisse', short: '5' },
+  { id: 'results', label: 'Bericht', short: '5' },
 ];
 
 export type ChangeReason = 'project' | 'live' | 'selection' | 'view' | 'floor' | 'load' | 'phase';
@@ -196,10 +196,6 @@ export class Store {
           return f.walls.some((w) => w.id === s.wallId && w.openings.some((o) => o.id === s.id));
         case 'room':
           return f.rooms.some((r) => r.id === s.id);
-        case 'furniture':
-          return f.furniture.some((x) => x.id === s.id);
-        case 'stair':
-          return f.stairs.some((x) => x.id === s.id);
         case 'dimension':
           return f.dimensions.some((x) => x.id === s.id);
         case 'label':

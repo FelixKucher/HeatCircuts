@@ -1,14 +1,12 @@
-// Beispielprojekt: Einfamilienhaus 10 × 8 m (Wandachsen), EG + OG, gerade Treppe im Wohnbereich,
-// möbliert, Satteldach; Heizung mit Fußboden-, Wand- und Elektroflächen, je Geschoss ein Verteiler.
+// Beispielprojekt: Einfamilienhaus 10 × 8 m (Wandachsen), EG + OG, je Geschoss ein Architektenplan als Vorlage,
+// Treppenöffnung im OG als Aussparung; Heizung mit Fußboden-, Wand- und Elektroflächen, je Geschoss ein Verteiler.
 
 import type { FloorFinish, ImageStore, OpeningStyle, Project, Vec } from './types';
 import { applyRoomType, applyYearBuilt, newFloor, newProject, newSurface, uid } from './factory';
 import { addRectRoom, detectRoomAt, roomTypeFromName } from '../cad/edit';
 import { newOpening } from '../cad/openings';
-import { newStair } from '../cad/stairs';
-import { nearestWall } from '../cad/walls';
-import { CATALOG_BY_KEY } from '../cad/furniture';
-import { centroid } from '../geometry/geom';
+import { nearestWall, pointOnWall, wallOutlines } from '../cad/walls';
+import { area, centroid } from '../geometry/geom';
 import { defaultField } from '../geometry/wallfield';
 import { autoLayout } from '../calc/autolayout';
 import { normalizeProject } from './normalize';
@@ -42,11 +40,6 @@ function opening(f: Floor, p: Vec, style: OpeningStyle, side: 'left' | 'right' =
   nw.wall.openings.push({ ...newOpening(style, nw.t, nw.wall), side, ...o });
 }
 
-function fur(f: Floor, key: string, x: number, y: number, angle = 0, o: Partial<{ width: number; depth: number; height: number; color: string }> = {}): void {
-  const it = CATALOG_BY_KEY[key];
-  f.furniture.push({ id: uid('F'), catalog: key, name: it.name, pos: { x, y }, angle, width: o.width ?? it.width, depth: o.depth ?? it.depth, height: o.height ?? it.height, elevation: it.elevation ?? 0, color: o.color ?? it.color, mirrored: false, visible: true });
-}
-
 export function createSampleProject(): { project: Project; images: ImageStore } {
   const p = newProject('Beispiel: Einfamilienhaus');
   p.isExample = true;
@@ -78,31 +71,6 @@ export function createSampleProject(): { project: Project; images: ImageStore } 
   opening(eg, W(8.6, 8), 'window', 'left', { width: 1.51, sill: 0.51, height: 1.76 });
   opening(eg, W(0, 6.3), 'window', 'right', { width: 1.26 });
   opening(eg, W(10, 5.8), 'window', 'left', { width: 1.26 });
-  const st = newStair('straight', W(2.42, 4.12));
-  st.angle = 90;
-  st.length = 4.3;
-  eg.stairs.push(st);
-  fur(eg, 'kbase120', 0.85, 0.4825);
-  fur(eg, 'ksink', 1.9, 0.4825);
-  fur(eg, 'dishwasher', 2.65, 0.4825);
-  fur(eg, 'kstove', 3.25, 0.4825);
-  fur(eg, 'fridge', 0.5075, 1.55, 270, { depth: 0.65 });
-  fur(eg, 'kisland', 2.2, 2.25);
-  fur(eg, 'kwall', 0.85, 0.3575, 0, { width: 1.2 });
-  fur(eg, 'kwall', 2.25, 0.3575, 0, { width: 1.2 });
-  fur(eg, 'wc', 9.4, 0.4575);
-  fur(eg, 'basin', 7.35, 0.4225, 0, { width: 0.6 });
-  fur(eg, 'washer', 9.5175, 2.65, 90);
-  fur(eg, 'heatpump', 6.8875, 2.75, 270, { depth: 0.6, width: 0.7 });
-  fur(eg, 'dining6', 3.0, 6.25);
-  for (const [x, y, a] of [[2.4, 5.55, 0], [3.6, 5.55, 0], [2.4, 6.95, 180], [3.6, 6.95, 180], [1.75, 6.25, 270], [4.25, 6.25, 90]] as const) fur(eg, 'chair', x, y, a);
-  fur(eg, 'sofa3', 7.8, 7.3, 180, { color: '#56687a' });
-  fur(eg, 'armchair', 9.2, 5.9, 90, { color: '#a07b58' });
-  fur(eg, 'coffeetable', 7.8, 6.2);
-  fur(eg, 'rug', 7.8, 6.25, 0, { width: 2.6, depth: 1.8 });
-  fur(eg, 'tvboard', 7.9, 3.8);
-  fur(eg, 'plant', 9.5, 7.45);
-  fur(eg, 'fireplace', 5.9, 3.85);
 
   const og = newFloor('Obergeschoss', eg.elevation + eg.storeyHeight, 2.75);
   og.clearHeight = 2.5;
@@ -129,22 +97,8 @@ export function createSampleProject(): { project: Project; images: ImageStore } 
   opening(og, W(8.5, 8), 'window', 'left', { width: 1.51 });
   opening(og, W(0, 6.5), 'window', 'right', { width: 1.01 });
   opening(og, W(10, 4.25), 'window', 'left', { width: 1.01 });
-  fur(og, 'bed90', 1.2075, 1.4, 270);
-  fur(og, 'desk', 3.2, 3.06, 180, { width: 1.2, depth: 0.7 });
-  fur(og, 'wardrobe', 2.3, 0.4825, 0, { width: 1.5 });
-  fur(og, 'bed90', 8.7925, 1.4, 90);
-  fur(og, 'shelf', 7.5, 0.3575, 0, { width: 0.8 });
-  fur(og, 'bathtub', 5.0, 0.5575);
-  fur(og, 'basin2', 6.6625, 2.0, 90);
-  fur(og, 'shower', 4.5375, 2.9625, 180);
-  fur(og, 'wc', 6.6375, 0.9, 90);
-  fur(og, 'bed180', 2.75, 6.7675, 180);
-  fur(og, 'nightstand', 1.55, 7.6175, 180);
-  fur(og, 'nightstand', 3.95, 7.6175, 180);
-  fur(og, 'wardrobe', 5.8875, 6.5, 270, { width: 2.4 });
-  fur(og, 'desk', 8.5, 7.4175, 180);
-  fur(og, 'officechair', 8.5, 6.7);
-  fur(og, 'shelf', 9.6425, 6.2, 90, { width: 1.2 });
+  // Treppenöffnung (gerader Lauf im Wohnbereich darunter): keine Heizfläche
+  og.voids.push({ id: uid('v'), kind: 'stair', polygon: [W(0.27, 3.67), W(4.57, 3.67), W(4.57, 4.57), W(0.27, 4.57)] });
 
   normalizeProject(p);
   // Heizung: WC mit Elektro-Heizmatte, Bad zusätzlich mit Wandheizung an der Außenwand
@@ -163,5 +117,55 @@ export function createSampleProject(): { project: Project; images: ImageStore } 
   og.manifolds.push({ id: uid('m'), name: 'HKV OG', pos: W(9.0, 3.67), supplyLengthOverride: null, maxOutlets: 10 });
   p.heatSource = { floorId: eg.id, pos: W(7.3, 2.75), name: 'Luft/Wasser-Wärmepumpe', type: 'wp_luft' };
   autoLayout(p);
-  return { project: p, images: {} };
+  // Vorlagen: so, wie der Plan vom Architekten käme (Linien, Raumstempel, Maßstab)
+  const images: ImageStore = {};
+  for (const [f, title] of [[eg, 'Grundriss Erdgeschoss'], [og, 'Grundriss Obergeschoss']] as const) {
+    const d = planDrawing(f, title);
+    const id = uid('img');
+    images[id] = d.dataUrl;
+    f.background = { imageId: id, widthPx: d.widthPx, heightPx: d.heightPx, pxPerM: d.pxPerM, offset: d.offset, opacity: 0.75, visible: true, locked: true, calibrated: true };
+  }
+  return { project: p, images };
+}
+
+/** Planzeichnung eines Geschosses als SVG-Bild (schwarz-weiß, 1 m = 100 px) */
+function planDrawing(f: Floor, title: string): { dataUrl: string; widthPx: number; heightPx: number; pxPerM: number; offset: Vec } {
+  const k = 100;
+  const ox = -1.2;
+  const oy = -1.2;
+  const W = 12.4;
+  const H = 11;
+  const X = (q: Vec) => `${((q.x - ox) * k).toFixed(1)},${((q.y - oy) * k).toFixed(1)}`;
+  const outl = wallOutlines(f.walls);
+  let g = '';
+  for (const o of outl.values()) g += `<polygon points="${o.poly.map(X).join(' ')}" fill="url(#h)" stroke="#111" stroke-width="2.2"/>`;
+  for (const w of f.walls)
+    for (const op of w.openings) {
+      const a = pointOnWall(w, op.offset - op.width / 2);
+      const b = pointOnWall(w, op.offset + op.width / 2);
+      const n = { x: -(w.b.y - w.a.y), y: w.b.x - w.a.x };
+      const L = Math.hypot(n.x, n.y) || 1;
+      const t = w.thickness / 2 + 0.01;
+      const off = (q: Vec, s: number) => ({ x: q.x + (n.x / L) * t * s, y: q.y + (n.y / L) * t * s });
+      g += `<polygon points="${[off(a, 1), off(b, 1), off(b, -1), off(a, -1)].map(X).join(' ')}" fill="#fff"/>`;
+      if (op.kind === 'window') g += `<polyline points="${[off(a, 0.25), off(b, 0.25)].map(X).join(' ')}" stroke="#111" stroke-width="1.4"/><polyline points="${[off(a, -0.25), off(b, -0.25)].map(X).join(' ')}" stroke="#111" stroke-width="1.4"/>`;
+      else {
+        const s = op.side === 'right' ? -1 : 1;
+        const hinge = op.hinge === 'b' ? b : a;
+        const free = op.hinge === 'b' ? a : b;
+        const leaf = { x: hinge.x + (n.x / L) * op.width * s, y: hinge.y + (n.y / L) * op.width * s };
+        g += `<polyline points="${[hinge, leaf].map(X).join(' ')}" stroke="#111" stroke-width="1.6"/><path d="M${X(leaf)} A${(op.width * k).toFixed(1)} ${(op.width * k).toFixed(1)} 0 0 ${s * (op.hinge === 'b' ? -1 : 1) > 0 ? 1 : 0} ${X(free)}" fill="none" stroke="#111" stroke-width="0.8" stroke-dasharray="5 4"/>`;
+      }
+    }
+  for (const r of f.rooms) {
+    // Raumstempel oben links im Raum, wie im Architektenplan
+    const x0 = Math.min(...r.polygon.map((q) => q.x)) + 0.22;
+    const y0 = Math.min(...r.polygon.map((q) => q.y)) + 0.42;
+    const tx = ((x0 - ox) * k).toFixed(1);
+    g += `<text x="${tx}" y="${((y0 - oy) * k).toFixed(1)}" font-size="20" font-family="Helvetica,Arial,sans-serif" fill="#111">${r.name.replace(/&/g, '&amp;')}</text><text x="${tx}" y="${((y0 - oy) * k + 21).toFixed(1)}" font-size="15" font-family="Helvetica,Arial,sans-serif" fill="#333">${area(r.polygon).toFixed(2).replace('.', ',')} m²</text>`;
+  }
+  for (const v of f.voids) g += `<polygon points="${v.polygon.map(X).join(' ')}" fill="none" stroke="#111" stroke-width="1" stroke-dasharray="8 5"/><polyline points="${[v.polygon[0], v.polygon[2]].map(X).join(' ')}" stroke="#111" stroke-width="0.8"/>`;
+  g += `<text x="${(W * k - 30).toFixed(0)}" y="${(H * k - 34).toFixed(0)}" font-size="26" text-anchor="end" font-family="Helvetica,Arial,sans-serif" fill="#111">${title}</text><text x="${(W * k - 30).toFixed(0)}" y="${(H * k - 8).toFixed(0)}" font-size="20" text-anchor="end" font-family="Helvetica,Arial,sans-serif" fill="#333">M 1:100 · Beispielplan</text>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W * k}" height="${H * k}" viewBox="0 0 ${W * k} ${H * k}"><defs><pattern id="h" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="10" height="10" fill="#fff"/><line x1="0" y1="0" x2="0" y2="10" stroke="#555" stroke-width="1.2"/></pattern></defs><rect width="100%" height="100%" fill="#fff"/>${g}</svg>`;
+  return { dataUrl: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`, widthPx: W * k, heightPx: H * k, pxPerM: k, offset: { x: ox, y: oy } };
 }

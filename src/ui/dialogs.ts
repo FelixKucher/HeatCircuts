@@ -167,18 +167,15 @@ export function openBuildingDialog(store: Store): void {
             : []),
         ],
         'tg',
-      )}<p class="note">Erdberührte Wandanteile werden je Außenwand aus dem Gelände ermittelt (EN ISO 13370) und lassen sich an der Wand überschreiben. Beispiel Hanglage: Garage talseitig auf Geländeniveau, Rückwand bergseitig im Erdreich.</p></section>
-      <section><h3>Dach</h3>${grid(
+      )}<p class="note">Erdberührte Wandanteile werden je Außenwand aus dem Gelände ermittelt (EN ISO 13370).</p></section>
+      <section><h3>Oberer Abschluss</h3>${grid(
         [
-          { kind: 'select', key: 'roof.type', label: 'Dachform', value: r.type, options: [['gable', 'Satteldach'], ['hip', 'Walmdach'], ['shed', 'Pultdach'], ['flat', 'Flachdach'], ['none', 'kein Dach (Geschoss folgt)']] },
-          { kind: 'num', key: 'roof.pitch', label: 'Dachneigung', value: r.pitch, unit: '°', digits: 0 },
-          { kind: 'select', key: 'roof.ridge', label: 'Firstrichtung', value: r.ridge, options: [['x', 'Ost–West (waagerecht im Plan)'], ['y', 'Nord–Süd (senkrecht im Plan)']] },
-          { kind: 'num', key: 'roof.overhang', label: 'Dachüberstand', value: r.overhang, unit: 'm', digits: 2 },
-          { kind: 'num', key: 'roof.kneeWall', label: 'Kniestock', value: r.kneeWall, unit: 'm', digits: 2 },
+          { kind: 'select', key: 'roof.type', label: 'Dach', value: r.type === 'flat' || r.type === 'none' ? r.type : 'gable', options: [['gable', 'Steildach'], ['flat', 'Flachdach'], ['none', 'kein Dach (Geschoss oder Nachbar folgt)']] },
+          ...(r.type === 'flat' || r.type === 'none' ? [] : ([{ kind: 'num', key: 'roof.pitch', label: 'Dachneigung', value: r.pitch, unit: '°', digits: 0 }] as FieldSpec[])),
           { kind: 'select', key: 'roof.insulation', label: 'Dämmebene', value: r.insulation, options: [['topSlab', 'oberste Geschossdecke (Dachraum kalt)'], ['rafters', 'Dachfläche (Dachgeschoss beheizt)']] },
         ],
         'dr',
-      )}</section>
+      )}<p class="note">Bestimmt den Wärmeverlust der obersten Räume: über die Geschossdecke zum kalten Dachraum oder über die Dachschräge (Fläche nach Neigung).</p></section>
       <section><h3>Lüftung</h3>${grid(
         [
           { kind: 'check', key: 'b.heatRecovery', label: 'Lüftungsanlage mit Wärmerückgewinnung', value: b.heatRecovery },

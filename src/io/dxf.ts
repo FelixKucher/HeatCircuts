@@ -3,7 +3,6 @@
 
 import type { BackgroundImage, Floor, Project, Vec } from '../model/types';
 import { pointOnWall, wallOutlines } from '../cad/walls';
-import { stairGeometry } from '../cad/stairs';
 import { area, centroid } from '../geometry/geom';
 
 // ---------- DXF lesen ----------
@@ -252,12 +251,6 @@ export function exportDxf(p: Project, l: Floor): string {
     const c = centroid(r.polygon);
     text('TEXT', c, 0.2, `${r.name} ${area(r.polygon).toFixed(2).replace('.', ',')} m2`);
   }
-  for (const f of l.furniture) {
-    const a = (f.angle * Math.PI) / 180;
-    const T = (x: number, y: number) => ({ x: f.pos.x + x * Math.cos(a) - y * Math.sin(a), y: f.pos.y + x * Math.sin(a) + y * Math.cos(a) });
-    polyline('MOEBEL', [T(-f.width / 2, -f.depth / 2), T(f.width / 2, -f.depth / 2), T(f.width / 2, f.depth / 2), T(-f.width / 2, f.depth / 2)]);
-  }
-  for (const s of l.stairs) for (const t of stairGeometry(s, l.storeyHeight).treads) polyline('TREPPEN', t.poly);
   for (const d of l.dimensions) {
     const dx = d.b.x - d.a.x;
     const dy = d.b.y - d.a.y;

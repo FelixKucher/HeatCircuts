@@ -124,8 +124,6 @@ export function newFloor(name: string, elevation: number, storeyHeight = 2.9): F
     voids: [],
     floorThickness: 0.25,
     visible: true,
-    furniture: [],
-    stairs: [],
     dimensions: [],
     labels: [],
   };
@@ -246,8 +244,10 @@ export function migrateProject(raw: unknown): Project {
     f.belowGrade = f.belowGrade ?? false;
     f.floorThickness = f.floorThickness ?? 0.25;
     f.visible = f.visible ?? true;
-    f.furniture = f.furniture ?? [];
-    f.stairs = f.stairs ?? [];
+    // Haus-CAD (Möbel, Treppen) ist entfernt: Treppenöffnungen bleiben als Aussparungen erhalten
+    delete f.furniture;
+    delete f.stairs;
+    for (const vd of f.voids) delete vd.stairId;
     f.dimensions = f.dimensions ?? [];
     f.labels = f.labels ?? [];
     for (const w of f.walls) w.openings = w.openings ?? [];

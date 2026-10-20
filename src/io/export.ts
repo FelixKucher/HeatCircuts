@@ -11,8 +11,7 @@ const EXPORT_CSS = `
 .p-room{fill:#e8eef3;fill-opacity:.45;stroke:none}.p-room.unheated{fill:#f1f1ef}.p-room.warn{fill:#f6e2d8}
 .p-room-name{font-weight:600}.p-room-area{fill:#45525d}
 .p-op-gap{fill:#fff}.p-op-reveal,.p-op-win{stroke:#1d2a35;stroke-width:.015}.p-op-glass{stroke:#2d64c8;stroke-width:.008}.p-op-leaf{stroke:#1d2a35;stroke-width:.02}.p-op-arc,.p-op-sill{fill:none;stroke:#1d2a35;stroke-width:.008}.p-op-slide{fill:#fff;stroke:#1d2a35;stroke-width:.008}.p-op-garage{stroke:#1d2a35;stroke-width:.01}.p-dashed{stroke-dasharray:.06 .04}.p-hit,.p-hit-line{display:none}
-.p-fur .p-fur-bg{fill:#fff;fill-opacity:.7}.p-sym{fill:none;stroke:#5b6670;stroke-width:.01}.sym-t{font-size:.12px;fill:#5b6670;stroke:none}.fill-dark{fill:#5b6670}
-.p-tread{fill:#fff;stroke:#45525d;stroke-width:.01}.p-stair-bg{fill:#fff}.p-walkline{fill:none;stroke:#45525d;stroke-width:.01}.p-walk-start,.p-arrow-head{fill:#45525d}
+.p-arrow-head{fill:#45525d}
 .p-void polygon{fill:none;stroke:#8a9399;stroke-width:.012;stroke-dasharray:.08 .05}.p-void line{stroke:#8a9399;stroke-width:.008}
 .p-dim-line,.p-dim-ext{stroke:#45525d;stroke-width:.008}.p-dim-tick{stroke:#45525d;stroke-width:.016}.p-dim-text{fill:#1d2a35}
 .p-ghost{display:none}.p-label{text-anchor:start}
@@ -38,7 +37,7 @@ text{font-family:"IBM Plex Sans","Helvetica Neue",Arial,sans-serif;text-anchor:m
 .lbl-title{font-weight:600}.lbl{fill:#45525d}.lbl-warn{fill:#b4361f}.lbl-muted{fill:#8a9399}.lbl-feeder{fill:#6b2f9e}
 .title-block text{text-anchor:start}
 .opening-cut{fill:#fff;stroke:none}.window-line{stroke:#1d2a35;stroke-width:.015}.door-leaf{stroke:#1d2a35;stroke-width:.025}.door-arc{fill:none;stroke:#8a9399;stroke-width:.012;stroke-dasharray:.05 .04}.garage-line{stroke:#1d2a35;stroke-width:.03;stroke-dasharray:.15 .08}
-.void{fill:#f1f1ef;stroke:#45525d;stroke-width:.02}.stair-line{stroke:#45525d;stroke-width:.012}.stair-arrow{fill:none;stroke:#1d2a35;stroke-width:.02}.stair-post{fill:#45525d}.void-cross{stroke:#8a9399;stroke-width:.012}
+.void{fill:#f1f1ef;stroke:#45525d;stroke-width:.02}.void-cross{stroke:#8a9399;stroke-width:.012}
 .elmat-line{stroke:#e08a3a}.elmat{opacity:.6}.ceil-dot{fill:#e0a060}.wall-heat{stroke:#c8372d;stroke-width:.08;stroke-dasharray:.12 .05}
 `;
 

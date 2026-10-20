@@ -1,8 +1,8 @@
 // Eigenschaften (rechte Seitenleiste), abhängig von Arbeitsphase und Auswahl:
-// Grundriss = Geometrie und Darstellung, Bauteile = Hülle und Aufbauten, Heizflächen = Heizung je Raum,
-// Heizkreise = Verteiler, Wärmeerzeuger, Anschlüsse, Ergebnisse = Kennzahlen.
+// Plan = Vorlage und Geometrie, Heizlast = Raumdaten und Bauteile, Heizflächen = Heizung je Raum,
+// Heizkreise = Verteiler, Wärmeerzeuger, Anschlüsse, Bericht = Kennzahlen.
 
-import type { Floor, HeatingSurface, Opening, OpeningStyle, Project, Room, StairType, SurfaceKind, Wall } from '../model/types';
+import type { Floor, HeatingSurface, Opening, OpeningStyle, Project, Room, SurfaceKind, Wall } from '../model/types';
 import { PHASES, type Phase, type SelItem, type Store } from '../model/store';
 import type { RoomResult, SurfaceResult, Warning } from '../calc/design';
 import { COVERINGS, HEAT_SOURCE_TYPES, ROOM_TYPES, SPACINGS } from '../model/catalog';
@@ -12,15 +12,11 @@ import { applyRoomType, newSurface, uid } from '../model/factory';
 import { add, area, centroid, cross, dist, mul, norm, perimeter, sub } from '../geometry/geom';
 import { defaultField, wallsOfRoom } from '../geometry/wallfield';
 import { DEFAULT_RECOGNIZE, type RecognizeOptions } from '../geometry/recognize';
-import { buildingBounds, buriedHeight } from '../geometry/terrain';
-import { CATALOG_BY_KEY } from '../cad/furniture';
 import { kindForStyle, OPENING_STYLES, styleOf } from '../cad/openings';
-import { stairGeometry, stepCount } from '../cad/stairs';
 import { clampOpening, splitWall, wallLength } from '../cad/walls';
 import { addWallChain, refitRooms } from '../cad/edit';
 import { bindFields, fieldHtml, type FieldSpec, type FieldValue } from './forms';
 import { bindElementConstructions, elementConstructionHtml } from './construction';
-import { FINISH_COLORS, floorColorOf } from './plan-render';
 import { cm, degC, esc, K, kgh, level, lmin, m, m2, mbar, num, W, Wm2 } from './format';
 
 export const WARNING_TEXT: Record<Warning, string> = {
@@ -137,16 +133,14 @@ export class PropsPanel {
         const w = f.walls.find((x) => x.id === it.wallId);
         const o = w?.openings.find((x) => x.id === it.id);
         if (w && o) html += this.openingPanel(w, o);
-      } else if (it.kind === 'furniture') html += this.furniturePanel(it.id, sel.length);
-      else if (it.kind === 'stair') html += this.stairPanel(it.id);
-      else if (it.kind === 'dimension') html += this.dimPanel(it.id);
+      } else if (it.kind === 'dimension') html += this.dimPanel(it.id);
       else if (it.kind === 'label') html += this.labelPanel(it.id);
       else if (it.kind === 'void') html += this.voidPanel(it.id);
       else if (it.kind === 'manifold') html += this.manifoldPanel(it.id);
       else if (it.kind === 'heatSource' && s.project.heatSource) html += this.heatSourcePanel();
       else if (it.kind === 'route') html += this.routePanel(it.id);
     }
-    const canPaint = ['wall', 'opening', 'room', 'furniture'].includes(sel[0].kind) && s.phase !== 'circuits' && s.phase !== 'results';
+    const canPaint = ['wall', 'opening', 'room'].includes(sel[0].kind) && s.phase !== 'build' && s.phase !== 'circuits' && s.phase !== 'results';
     const geom = s.phase === 'build';
     html += `<div class="actions sticky">${canPaint ? `<button class="btn small" data-act="painter" title="Eigenschaften auf andere Objekte übertragen">Format übertragen</button>` : ''}${geom ? `<button class="btn small" data-act="rotate">Drehen 90°</button>` : ''}${geom || ['manifold', 'heatSource', 'route', 'void'].includes(sel[0].kind) ? `<button class="btn small danger" data-act="delete" data-confirm="1">Löschen</button>` : ''}</div>`;
     return html;
@@ -167,14 +161,16 @@ export class PropsPanel {
     let list = '';
     let intro = '';
     switch (s.phase) {
-      case 'build':
-        intro = 'Grundriss zeichnen: Räume aufziehen (R) oder Wände zeichnen (W), dann Türen und Fenster setzen (O). Ein Grundrissbild kann als Vorlage dienen.';
-        list = item(walls.length > 0, `${walls.length} Wände`) + item(rooms.length > 0, `${rooms.length} Räume`) + item(ops.some((o) => o.kind === 'window'), `${ops.filter((o) => o.kind === 'window').length} Fenster, ${ops.filter((o) => o.kind !== 'window').length} Türen`) + item(p.floors.length > 1 || rooms.length > 0, `${p.floors.length} Geschoss${p.floors.length > 1 ? 'e' : ''}`);
+      case 'build': {
+        const bgs = p.floors.filter((f) => f.background);
+        intro = 'Zeichnung laden (PDF, DXF, Bild oder IFC), Maßstab prüfen (K) und die beheizten Räume nachzeichnen: Rechteck (R), Polygon (P) oder Doppelklick in einen umschlossenen Raum. Außenwände (W) und Fenster (O) verbessern die Heizlast, Aussparungen (U) bleiben frei.';
+        list = item(bgs.length > 0, bgs.length ? `Vorlage geladen (${bgs.length}/${p.floors.length} Geschosse)` : 'keine Zeichnung geladen') + item(bgs.every((f) => f.background!.calibrated), bgs.some((f) => !f.background!.calibrated) ? 'Maßstab noch nicht kalibriert' : 'Maßstab stimmt') + item(rooms.length > 0, `${rooms.length} Räume`) + item(walls.some((w) => w.kind === 'exterior'), `${walls.filter((w) => w.kind === 'exterior').length} Außenwände, ${ops.filter((o) => o.kind === 'window').length} Fenster`);
         break;
+      }
       case 'parts': {
         const ext = walls.filter((w) => w.kind === 'exterior').length;
         const own = walls.filter((w) => w.construction).length + rooms.filter((r) => r.floorConstruction || r.ceilingConstruction).length;
-        intro = 'Bauteile prüfen: Wand anklicken für Art und Aufbau, Fenster und Türen für den U-Wert, Raum für Raumart, Boden und Decke. „Format übertragen“ kopiert Angaben auf weitere Bauteile.';
+        intro = 'Heizlast: Raum anklicken für Raumart, Temperatur, Boden und Decke; Außenwand oder Fenster für Aufbau und U-Wert. Standort, Baujahr und Gebäudeaufbauten unter „Gebäude“. „Format übertragen“ kopiert Angaben.';
         list = item(ext > 0, `${ext} Außenwände, ${walls.filter((w) => w.kind === 'party').length} Trennwände`) + item(true, `${own} Bauteile mit eigenem Aufbau`) + item(rooms.every((r) => r.type !== 'sonstiges'), `${rooms.filter((r) => r.type === 'sonstiges').length} Räume ohne Raumart`) + item(true, `Heizlast gesamt ${num(d.totals.heatLoad, 0)} W`);
         break;
       }
@@ -191,7 +187,7 @@ export class PropsPanel {
         break;
       }
       case 'results':
-        intro = 'Ergebnisse: Tabellen unten öffnen, als CSV oder SVG exportieren. Zurück in jede Phase ist jederzeit möglich.';
+        intro = 'Bericht: Tabellen unten prüfen, den Auslegungsbericht als DIN A4 drucken oder Tabellen als CSV exportieren.';
         list = item(true, `Heizlast ${num(d.totals.heatLoad, 0)} W`) + item(d.totals.deficit < 5, d.totals.deficit > 5 ? `${num(d.totals.deficit, 0)} W ohne ausreichende Heizfläche` : 'alle Räume ausreichend versorgt') + item(true, `${d.totals.circuits} Heizkreise · ${num(d.totals.pipeTotal, 0)} m Rohr`);
         break;
     }
@@ -206,6 +202,7 @@ export class PropsPanel {
     const phase = s.phase;
     let html = `<div class="panel-head"><h2>${esc(floor.name)}</h2><span class="chip">${level(floor.elevation)}</span></div>`;
     if (phase === 'build') {
+      html += this.backgroundSection(floor);
       html += this.section(
         'Geschoss',
         [
@@ -215,12 +212,10 @@ export class PropsPanel {
           { kind: 'num', key: 'floor.clearHeight', label: 'lichte Raumhöhe', value: floor.clearHeight, unit: 'm', digits: 2 },
           { kind: 'num', key: 'floor.floorThickness', label: 'Deckenstärke darunter', value: floor.floorThickness, ...CMF },
           { kind: 'check', key: 'floor.belowGrade', label: 'Geschoss liegt im Erdreich (Keller)', value: floor.belowGrade },
-          { kind: 'check', key: 'floor.visible', label: 'in 3D anzeigen', value: floor.visible },
           { kind: 'readout', label: 'Fläche Räume', value: m2(floor.rooms.reduce((a, r) => a + area(r.polygon), 0), 2) },
         ],
         'f',
       );
-      html += this.backgroundSection(floor);
       const st = p.settings;
       html += this.section(
         'Zeichnen',
@@ -231,7 +226,6 @@ export class PropsPanel {
           { kind: 'check', key: 'set.magnetism', label: 'Magnetismus (Fangen, 15°, cm)', value: st.magnetism },
           { kind: 'check', key: 'set.showRoomArea', label: 'Raumflächen anzeigen', value: st.showRoomArea },
           { kind: 'check', key: 'set.showWallDims', label: 'Wandmaße der Auswahl', value: st.showWallDims },
-          { kind: 'num', key: 'site.north', label: 'Nordrichtung (Drehung)', value: p.site.north, unit: '°', digits: 0 },
         ],
         'st',
       );
@@ -292,15 +286,15 @@ export class PropsPanel {
       h += fieldHtml({ kind: 'check', key: 'bg.visible', label: 'Bild anzeigen', value: bg.visible }, 'b');
       h += `</div>`;
       if (!bg.calibrated) h += `<p class="note warn">Der Maßstab ist noch nicht kalibriert. Zwei Punkte mit bekanntem Abstand anklicken.</p>`;
-      h += `<div class="actions"><button class="btn small${bg.calibrated ? '' : ' primary'}" data-act="calibrate">Maßstab kalibrieren</button><button class="btn small" data-act="upload">Bild ersetzen</button><button class="btn small danger" data-act="remove-image" data-confirm="1">Entfernen</button></div><p class="note">⌥/Alt + Ziehen auf freier Fläche verschiebt das Bild.</p>`;
+      h += `<div class="actions"><button class="btn small${bg.calibrated ? '' : ' primary'}" data-act="calibrate">Maßstab kalibrieren</button><button class="btn small" data-cmd="pdf">Andere Zeichnung …</button><button class="btn small danger" data-act="remove-image" data-confirm="1">Entfernen</button></div><p class="note">⌥/Alt + Ziehen auf freier Fläche verschiebt das Bild.</p>`;
       h += `<h3 class="sub">Räume und Wände erkennen</h3><div class="fields">
         ${fieldHtml({ kind: 'select', key: 'rec.outlineWalls', label: 'Wände im Plan', value: o.outlineWalls ? '1' : '0', options: [['0', 'gefüllt / schraffiert'], ['1', 'nur Umrisslinien']] }, 'rc')}
         ${fieldHtml({ kind: 'range', key: 'rec.thresholdBias', label: 'Schwellwert', value: o.thresholdBias, min: -60, max: 60, step: 5, display: o.thresholdBias > 0 ? `+${o.thresholdBias}` : `${o.thresholdBias}` }, 'rc')}
         ${fieldHtml({ kind: 'num', key: 'rec.minWall', label: 'kleinste Wanddicke', value: o.minWall, ...CMF }, 'rc')}
         ${fieldHtml({ kind: 'num', key: 'rec.maxGap', label: 'größte Türbreite', value: o.maxGap, unit: 'm', digits: 2 }, 'rc')}
       </div><div class="actions"><button class="btn small primary" data-act="recognize" data-confirm="${floor.walls.length || floor.rooms.length ? '1' : ''}"${bg.calibrated ? '' : ' disabled title="Zuerst Maßstab kalibrieren"'}>Räume &amp; Wände erkennen</button></div>`;
-    } else h += `<p class="note">Grundriss (PNG, JPG, SVG oder DXF) laden, Maßstab kalibrieren und nachzeichnen oder Räume erkennen lassen.</p><div class="actions"><button class="btn small primary" data-act="upload">Grundriss laden</button></div>`;
-    return `<div class="group"><h3>Grundrissvorlage</h3>${h}</div>`;
+    } else h += `<p class="note">Zeichnung als Vorlage laden, Maßstab prüfen und die Räume nachzeichnen. IFC übernimmt Räume und Wände direkt.</p><div class="imp-grid"><button class="btn small primary" data-cmd="pdf">PDF</button><button class="btn small" data-cmd="dxf">DXF</button><button class="btn small" data-cmd="image">Bild</button><button class="btn small" data-cmd="ifc">IFC</button></div>`;
+    return `<div class="group"><h3>Zeichnung</h3>${h}</div>`;
   }
 
   // ---------- Wand ----------
@@ -324,16 +318,11 @@ export class PropsPanel {
         { kind: 'num', key: 'wall.bx', label: 'Ende X', value: w.b.x, ...CMF },
         { kind: 'num', key: 'wall.by', label: 'Ende Y', value: w.b.y, ...CMF },
       ], 'w');
-      html += this.section('Oberflächen' + multi, [
-        { kind: 'color', key: 'wall.colorLeft', label: 'Farbe links', value: w.colorLeft ?? '#f2efe9' },
-        { kind: 'color', key: 'wall.colorRight', label: 'Farbe rechts', value: w.colorRight ?? (w.kind === 'exterior' ? '#e9e2d6' : '#f2efe9') },
-      ], 'w', `<div class="actions"><button class="btn small" data-act="wall-split">In der Mitte teilen</button><button class="btn small" data-act="wall-reverse">Richtung umkehren</button></div>`);
+      html += `<div class="actions"><button class="btn small" data-act="wall-split">In der Mitte teilen</button><button class="btn small" data-act="wall-reverse">Richtung umkehren</button></div>`;
       html += this.openingsList(w);
     } else if (s.phase === 'parts') {
       const fields: FieldSpec[] = [{ kind: 'select', key: 'wall.kind', label: 'Art' + multi, value: w.kindAuto ? 'auto' : w.kind, options: WALL_KINDS.map(([k, l]) => [k, k === 'auto' ? `${l}: ${KIND_LABEL[w.kind]}` : l] as [string, string]) }];
       fields.push({ kind: 'num', key: 'wall.thickness', label: 'Dicke', value: w.thickness, ...CMF });
-      if (w.kind === 'exterior')
-        fields.push({ kind: 'num', key: 'wall.earthHeight', label: 'Erdanschüttung über OK FFB', value: w.earthHeight ?? null, unit: 'm', digits: 2, placeholder: `auto ${num(buriedHeight(p, floor, w, buildingBounds(p)), 2)}`, hint: 'leer = aus dem Gelände (Hanglage)' });
       html += this.section('Wand', fields, 'w');
       if (w.kind !== 'interior') html += `<div class="group">${elementConstructionHtml(p, floor, `wall:${w.id}`, w.kind === 'party' ? 'Aufbau Trennwand' : 'Aufbau dieser Wand')}</div>`;
       else html += `<p class="note">Innenwände zwischen beheizten Räumen gehen nur bei unterschiedlichen Raumtemperaturen in die Heizlast ein (U Innenwand ${num(p.building.uInteriorWall, 2)}).</p>`;
@@ -376,7 +365,6 @@ export class PropsPanel {
         { kind: 'num', key: 'op.sill', label: 'Brüstung', value: o.sill, ...CMF },
         { kind: 'num', key: 'op.left', label: 'Abstand zum Wandanfang', value: o.offset - o.width / 2, ...CMF },
         { kind: 'readout', label: 'Abstand zum Wandende', value: cm(L - o.offset - o.width / 2) },
-        { kind: 'color', key: 'op.color', label: 'Farbe', value: o.color ?? OPENING_STYLES[st].color },
       ], 'o', `<div class="actions"><button class="btn small" data-act="op-side">Öffnungsseite wechseln</button><button class="btn small" data-act="op-hinge">Anschlag links/rechts</button></div>`);
     } else {
       const isWin = o.kind === 'window';
@@ -411,10 +399,7 @@ export class PropsPanel {
         { kind: 'text', key: 'room.name', label: 'Bezeichnung', value: room.name },
         { kind: 'select', key: 'room.type', label: 'Raumart', value: room.type, options: typeOpts },
         { kind: 'select', key: 'room.covering', label: 'Bodenbelag', value: room.covering, options: covOpts },
-        { kind: 'color', key: 'room.floorColor', label: 'Bodenfarbe', value: floorColorOf(room) },
-        { kind: 'color', key: 'room.ceilingColor', label: 'Deckenfarbe', value: room.ceilingColor ?? '#fbfaf7' },
-        { kind: 'check', key: 'room.showFloor', label: 'Boden in 3D', value: room.showFloor ?? true },
-        { kind: 'check', key: 'room.showCeiling', label: 'Decke in 3D', value: room.showCeiling ?? true },
+        { kind: 'check', key: 'room.heated', label: 'beheizt', value: room.heated },
         { kind: 'readout', label: 'Fläche', value: m2(area(room.polygon), 2) },
         { kind: 'readout', label: 'Umfang', value: m(perimeter(room.polygon), 2) },
       ], 'r', `<div class="actions"><button class="btn small" data-act="room-walls">Wände um den Raum erzeugen</button><button class="btn small" data-act="room-refit">An Wände anpassen</button></div>`);
@@ -437,7 +422,7 @@ export class PropsPanel {
       return html;
     }
     if (phase === 'heating') {
-      if (!room.heated) return html + `<p class="note">Unbeheizter Raum. In der Phase „Bauteile“ auf beheizt umstellen.</p>`;
+      if (!room.heated) return html + `<p class="note">Unbeheizter Raum. In der Phase „Plan“ oder „Heizlast“ auf beheizt umstellen.</p>`;
       const rs = new Map((r?.surfaces ?? []).map((x) => [x.surfaceId, x]));
       html += this.section('Bodenbelag', [
         { kind: 'select', key: 'room.covering', label: 'Bodenbelag (R_λ,B)', value: room.covering, options: covOpts },
@@ -525,60 +510,7 @@ export class PropsPanel {
     </div>`;
   }
 
-  // ---------- Möbel, Treppe, Maß, Text, Luftraum ----------
-
-  private furniturePanel(id: string, n: number): string {
-    const f = this.store.floor.furniture.find((x) => x.id === id);
-    if (!f) return '';
-    const multi = n > 1 ? ' (alle gewählten)' : '';
-    return (
-      `<div class="panel-head"><h2>${esc(f.name)}</h2><span class="chip">${esc(CATALOG_BY_KEY[f.catalog]?.category ?? '')}</span></div>` +
-      this.section('Maße' + multi, [
-        { kind: 'text', key: 'fur.name', label: 'Name', value: f.name },
-        { kind: 'num', key: 'fur.width', label: 'Breite', value: f.width, ...CMF },
-        { kind: 'num', key: 'fur.depth', label: 'Tiefe', value: f.depth, ...CMF },
-        { kind: 'num', key: 'fur.height', label: 'Höhe', value: f.height, ...CMF },
-        { kind: 'num', key: 'fur.elevation', label: 'Höhe über Boden', value: f.elevation, ...CMF },
-      ], 'fu') +
-      this.section('Lage und Aussehen' + multi, [
-        { kind: 'num', key: 'fur.x', label: 'X', value: f.pos.x, ...CMF },
-        { kind: 'num', key: 'fur.y', label: 'Y', value: f.pos.y, ...CMF },
-        { kind: 'num', key: 'fur.angle', label: 'Winkel', value: f.angle, unit: '°', digits: 0 },
-        { kind: 'color', key: 'fur.color', label: 'Farbe', value: f.color },
-        { kind: 'check', key: 'fur.mirrored', label: 'gespiegelt', value: f.mirrored },
-        { kind: 'check', key: 'fur.visible', label: 'sichtbar', value: f.visible },
-      ], 'fu')
-    );
-  }
-
-  private stairPanel(id: string): string {
-    const l = this.store.floor;
-    const st = l.stairs.find((x) => x.id === id);
-    if (!st) return '';
-    const g = stairGeometry(st, l.storeyHeight);
-    const going = st.type === 'spiral' ? (Math.min(2 * Math.PI, (g.steps * 22.5 * Math.PI) / 180) * (st.length / 2) * 0.6) / g.steps : st.type === 'lshape' ? (st.length - st.width + st.length2) / (g.steps - 1) : st.length / g.steps;
-    const rule = 2 * g.riser + going;
-    const ok = g.riser >= 0.14 && g.riser <= 0.2 && going >= 0.23 && rule >= 0.59 && rule <= 0.65;
-    return (
-      `<div class="panel-head"><h2>Treppe</h2><span class="chip">${g.steps} Steigungen</span></div>` +
-      this.section('Treppe', [
-        { kind: 'select', key: 'st.type', label: 'Art', value: st.type, options: [['straight', 'gerade'], ['lshape', 'viertelgewendelt (L, mit Podest)'], ['spiral', 'Spindeltreppe']] },
-        { kind: 'num', key: 'st.width', label: st.type === 'spiral' ? 'Durchmesser' : 'Laufbreite', value: st.type === 'spiral' ? st.length : st.width, ...CMF },
-        ...(st.type !== 'spiral' ? ([{ kind: 'num', key: 'st.length', label: st.type === 'lshape' ? 'Länge Lauf 1 inkl. Podest' : 'Lauflänge', value: st.length, ...CMF }] as FieldSpec[]) : []),
-        ...(st.type === 'lshape' ? ([{ kind: 'num', key: 'st.length2', label: 'Länge Lauf 2', value: st.length2, ...CMF }] as FieldSpec[]) : []),
-        { kind: 'num', key: 'st.steps', label: 'Steigungen', value: st.steps, digits: 0, placeholder: `auto ${stepCount({ ...st, steps: null }, l.storeyHeight)}` },
-        ...(st.type === 'spiral' ? ([{ kind: 'check', key: 'st.clockwise', label: 'im Uhrzeigersinn', value: st.clockwise }] as FieldSpec[]) : []),
-        { kind: 'num', key: 'st.angle', label: 'Winkel', value: st.angle, unit: '°', digits: 0 },
-        { kind: 'color', key: 'st.color', label: 'Farbe', value: st.color },
-        { kind: 'check', key: 'st.cutCeiling', label: 'Decke darüber aussparen', value: st.cutCeiling },
-      ], 'sta') +
-      this.section('Steigungsverhältnis (DIN 18065, Wohngebäude)', [
-        { kind: 'readout', label: 'Steigung s', value: cm(g.riser), tone: g.riser >= 0.14 && g.riser <= 0.2 ? 'ok' : 'warn' },
-        { kind: 'readout', label: st.type === 'spiral' ? 'Auftritt a (Lauflinie)' : 'Auftritt a', value: cm(going), tone: going >= 0.23 ? 'ok' : 'warn' },
-        { kind: 'readout', label: 'Schrittmaß 2s + a', value: cm(rule), tone: ok ? 'ok' : 'warn' },
-      ], 'stb', `<p class="note">Richtwerte für notwendige Treppen in Wohngebäuden bis zwei Wohnungen: s 14–20 cm, a ≥ 23 cm, 2s + a = 59–65 cm. Verbindlich sind DIN 18065 und die Landesbauordnung.</p>`)
-    );
-  }
+  // ---------- Maß, Text, Aussparung ----------
 
   private dimPanel(id: string): string {
     const d = this.store.floor.dimensions.find((x) => x.id === id);
@@ -600,7 +532,7 @@ export class PropsPanel {
   private voidPanel(id: string): string {
     const vd = this.store.floor.voids.find((x) => x.id === id);
     if (!vd) return '';
-    return `<div class="panel-head"><h2>Luftraum</h2><span class="chip">${m2(area(vd.polygon), 2)}</span></div><p class="note">Öffnung im Fußboden dieses Geschosses (Galerie, Luftraum). Sie zählt nicht zur beheizten Fläche; der Raum darunter ist hier nach oben offen. Treppenlöcher entstehen automatisch aus den Treppen.</p>`;
+    return `<div class="panel-head"><h2>Aussparung</h2><span class="chip">${m2(area(vd.polygon), 2)}</span></div><p class="note">Fläche ohne Heizrohr: Treppenloch, Luftraum, Kücheninsel, Dusche oder Einbauten. Sie zählt nicht zur belegten Fläche; bei einem Treppenloch oder Luftraum ist der Raum darunter nach oben offen.</p>`;
   }
 
   // ---------- Verteiler, Wärmeerzeuger, Leitung ----------
@@ -749,7 +681,6 @@ export class PropsPanel {
             if (!w) continue;
             const L = wallLength(w);
             [w.a, w.b] = [w.b, w.a];
-            [w.colorLeft, w.colorRight] = [w.colorRight, w.colorLeft];
             for (const o of w.openings) {
               o.offset = L - o.offset;
               o.side = (o.side ?? 'left') === 'left' ? 'right' : 'left';
@@ -870,7 +801,6 @@ export class PropsPanel {
           if (field === 'clearHeight' && numv !== null && numv > 1) f.clearHeight = numv;
           if (field === 'floorThickness' && numv !== null && numv >= 0) f.floorThickness = numv;
           if (field === 'belowGrade') f.belowGrade = !!val;
-          if (field === 'visible') f.visible = !!val;
         });
       case 'set':
         return run((p) => {
@@ -892,8 +822,6 @@ export class PropsPanel {
             if (field === 'thickness' && numv && numv > 0.01) w.thickness = numv;
             if (field === 'height') w.height = numv && numv > 0.1 ? numv : null;
             if ((field === 'ax' || field === 'ay' || field === 'bx' || field === 'by') && numv !== null) (field[0] === 'a' ? w.a : w.b)[field[1] as 'x' | 'y'] = numv;
-            if (field === 'colorLeft' || field === 'colorRight') w[field] = String(val);
-            if (field === 'earthHeight') w.earthHeight = numv === null ? null : Math.max(0, numv);
             if (field === 'kind') {
               w.kindAuto = val === 'auto';
               if (val !== 'auto') w.kind = val as Wall['kind'];
@@ -910,14 +838,13 @@ export class PropsPanel {
           if (field === 'style') {
             const d = OPENING_STYLES[val as OpeningStyle];
             o.style = val as OpeningStyle;
-            Object.assign(o, { width: d.width, height: d.height, sill: d.sill, color: d.color });
+            Object.assign(o, { width: d.width, height: d.height, sill: d.sill });
             o.kind = kindForStyle(o.style, w);
           }
           if (field === 'width' && numv && numv > 0.2) o.width = Math.min(wallLength(w) - 0.02, numv);
           if (field === 'height' && numv && numv > 0.2) o.height = numv;
           if (field === 'sill' && numv !== null) o.sill = Math.max(0, numv);
           if (field === 'left' && numv !== null) o.offset = numv + o.width / 2;
-          if (field === 'color') o.color = String(val);
           if (field === 'uValue') o.uValue = numv !== null && numv > 0 ? numv : null;
           if (field === 'windowType') o.uValue = val ? (WINDOW_TYPES[String(val)]?.u ?? null) : null;
           o.offset = clampOpening(w, o, o.offset);
@@ -946,18 +873,6 @@ export class PropsPanel {
               case 'covering':
                 r.covering = String(val);
                 if (COVERINGS[r.covering]) r.rLambdaB = COVERINGS[r.covering].rLambdaB;
-                r.floorColor = undefined;
-                r.floorFinish = undefined;
-                break;
-              case 'floorColor':
-                r.floorColor = String(val);
-                break;
-              case 'ceilingColor':
-                r.ceilingColor = String(val);
-                break;
-              case 'showFloor':
-              case 'showCeiling':
-                r[field] = !!val;
                 break;
               case 'manifoldId':
                 r.manifoldId = val ? String(val) : null;
@@ -1010,40 +925,6 @@ export class PropsPanel {
           }
         });
       }
-      case 'fur':
-        return run((_p, f) => {
-          for (const x of f.furniture.filter((y) => ids('furniture').has(y.id))) {
-            if (field === 'name' && typeof val === 'string' && val.trim()) x.name = val.trim();
-            if ((field === 'width' || field === 'depth' || field === 'height') && numv && numv > 0.005) x[field] = numv;
-            if (field === 'elevation' && numv !== null) x.elevation = numv;
-            if (field === 'x' && numv !== null) x.pos.x = numv;
-            if (field === 'y' && numv !== null) x.pos.y = numv;
-            if (field === 'angle' && numv !== null) x.angle = ((numv % 360) + 360) % 360;
-            if (field === 'color') x.color = String(val);
-            if (field === 'mirrored' || field === 'visible') x[field] = !!val;
-          }
-        });
-      case 'st':
-        return run((_p, f) => {
-          const x = f.stairs.find((y) => y.id === sel[0]?.id);
-          if (!x) return;
-          if (field === 'type') {
-            x.type = val as StairType;
-            if (x.type === 'spiral') x.length = x.width = 1.6;
-            else if (x.type === 'lshape') Object.assign(x, { width: 1, length: 2.5, length2: 1.8 });
-            else Object.assign(x, { width: 1, length: 3.6 });
-          }
-          if (field === 'width' && numv && numv > 0.5) {
-            if (x.type === 'spiral') x.length = x.width = numv;
-            else x.width = numv;
-          }
-          if (field === 'length' && numv && numv > 0.5) x.length = numv;
-          if (field === 'length2' && numv && numv > 0.3) x.length2 = numv;
-          if (field === 'steps') x.steps = numv && numv >= 3 ? Math.round(numv) : null;
-          if (field === 'angle' && numv !== null) x.angle = ((numv % 360) + 360) % 360;
-          if (field === 'color') x.color = String(val);
-          if (field === 'clockwise' || field === 'cutCeiling') x[field] = !!val;
-        });
       case 'dim':
         return run((_p, f) => {
           const d = f.dimensions.find((y) => y.id === sel[0]?.id);
@@ -1087,6 +968,5 @@ export const HOUSE_TYPE_OPTIONS: [string, string][] = [
 ];
 
 const kindLabel = (k: SelItem['kind']) =>
-  ({ wall: 'Wände', opening: 'Öffnungen', room: 'Räume', furniture: 'Möbel', stair: 'Treppen', dimension: 'Maße', label: 'Texte', void: 'Lufträume', manifold: 'Verteiler', heatSource: 'Wärmeerzeuger', route: 'Leitungen' })[k];
+  ({ wall: 'Wände', opening: 'Öffnungen', room: 'Räume', dimension: 'Maße', label: 'Texte', void: 'Aussparungen', manifold: 'Verteiler', heatSource: 'Wärmeerzeuger', route: 'Leitungen' })[k];
 
-export { FINISH_COLORS };

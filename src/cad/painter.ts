@@ -1,5 +1,5 @@
 // „Format übertragen“: Eigenschaften eines Objekts auf andere gleicher Art kopieren (ohne Geometrie).
-// Umfang je Arbeitsphase: Grundriss = Darstellung, Bauteile = Hülle und Aufbau, Heizflächen = Heizung.
+// Umfang je Arbeitsphase: Heizlast = Hülle und Aufbau, Heizflächen/Heizkreise = Heizung.
 
 import type { Floor, HeatingSurface, Opening, Project, Room, Wall } from '../model/types';
 import type { Phase, SelItem } from '../model/store';
@@ -7,7 +7,7 @@ import { applyRoomType, uid } from '../model/factory';
 import { clampOpening } from './walls';
 
 export interface FormatData {
-  kind: 'wall' | 'opening' | 'room' | 'furniture';
+  kind: 'wall' | 'opening' | 'room';
   phase: Phase;
   data: Record<string, unknown>;
   label: string;
@@ -19,33 +19,24 @@ export function pickFormat(floor: Floor, it: SelItem, phase: Phase): FormatData 
   if (it.kind === 'wall') {
     const w = floor.walls.find((x) => x.id === it.id);
     if (!w) return null;
-    const data: Partial<Wall> =
-      phase === 'build'
-        ? { thickness: w.thickness, height: w.height ?? null, colorLeft: w.colorLeft, colorRight: w.colorRight }
-        : { kind: w.kind, kindAuto: w.kindAuto, construction: clone(w.construction ?? null), thickness: w.thickness };
+    const data: Partial<Wall> = { kind: w.kind, kindAuto: w.kindAuto, construction: clone(w.construction ?? null), thickness: w.thickness };
     return { kind: 'wall', phase, data, label: 'Wand' };
   }
   if (it.kind === 'opening') {
     const w = floor.walls.find((x) => x.id === it.wallId);
     const o = w?.openings.find((x) => x.id === it.id);
     if (!o) return null;
-    const data: Partial<Opening> = phase === 'build' ? { style: o.style, width: o.width, height: o.height, sill: o.sill, color: o.color } : { style: o.style, width: o.width, height: o.height, sill: o.sill, uValue: o.uValue ?? null };
+    const data: Partial<Opening> = { style: o.style, width: o.width, height: o.height, sill: o.sill, uValue: o.uValue ?? null };
     return { kind: 'opening', phase, data, label: 'Öffnung' };
   }
   if (it.kind === 'room') {
     const r = floor.rooms.find((x) => x.id === it.id);
     if (!r) return null;
     let data: Partial<Room>;
-    if (phase === 'build') data = { floorColor: r.floorColor, ceilingColor: r.ceilingColor, floorFinish: r.floorFinish, covering: r.covering, rLambdaB: r.rLambdaB };
-    else if (phase === 'parts')
+    if (phase === 'build' || phase === 'parts')
       data = { type: r.type, heated: r.heated, thetaI: r.thetaI, airChange: r.airChange, floorBoundary: r.floorBoundary, ceilingBoundary: r.ceilingBoundary, floorConstruction: clone(r.floorConstruction ?? null), ceilingConstruction: clone(r.ceilingConstruction ?? null) };
     else data = { covering: r.covering, rLambdaB: r.rLambdaB, surfaces: clone(r.surfaces.filter((s) => s.kind !== 'wall')), excludedArea: r.excludedArea };
     return { kind: 'room', phase, data, label: `Raum „${r.name}“` };
-  }
-  if (it.kind === 'furniture') {
-    const f = floor.furniture.find((x) => x.id === it.id);
-    if (!f) return null;
-    return { kind: 'furniture', phase, data: { color: f.color, elevation: f.elevation, width: f.width, depth: f.depth, height: f.height }, label: f.name };
   }
   return null;
 }
@@ -81,8 +72,5 @@ export function applyFormat(project: Project, floor: Floor, fmt: FormatData, tar
     Object.assign(r, d);
     return true;
   }
-  const f = floor.furniture.find((x) => x.id === target.id);
-  if (!f) return false;
-  Object.assign(f, clone(fmt.data));
-  return true;
+  return false;
 }

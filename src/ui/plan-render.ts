@@ -1,12 +1,9 @@
-// Planinhalt als SVG: Wände mit Gehrung und Öffnungen, Räume, Möbel, Treppen, Maße, Texte.
+// Planinhalt als SVG: Wände mit Gehrung und Öffnungen, Räume, Aussparungen, Maße, Texte.
 // Die Heizungsebenen (Kreise, Leitungen, Verteiler) kommen aus render.ts. Klassen mit Präfix „p-“.
 
-import { CATALOG_BY_KEY } from '../cad/furniture';
 import { OPENING_STYLES, styleOf } from '../cad/openings';
-import { stairGeometry } from '../cad/stairs';
 import { endsAt, left, pointOnWall, wallDir, wallLength, wallOutlines, type WallOutline } from '../cad/walls';
-import { COVERINGS } from '../model/catalog';
-import type { Floor, FloorFinish, Furniture, Opening, Project, Room, Stair, Vec, Wall } from '../model/types';
+import type { Floor, Opening, Project, Room, Vec, Wall } from '../model/types';
 import type { Phase, SelItem } from '../model/store';
 import type { DesignResult } from '../calc/design';
 import { add, area, centroid, dist, mul, norm, sub } from '../geometry/geom';
@@ -17,30 +14,6 @@ const P = (p: Vec) => `${p.x.toFixed(4)},${p.y.toFixed(4)}`;
 const poly = (pts: Vec[]) => pts.map(P).join(' ');
 const ln = (a: Vec, b: Vec, cls = '') => `<line x1="${a.x.toFixed(4)}" y1="${a.y.toFixed(4)}" x2="${b.x.toFixed(4)}" y2="${b.y.toFixed(4)}"${cls ? ` class="${cls}"` : ''}/>`;
 const pl = (pts: Vec[], cls = '') => `<polyline points="${poly(pts)}"${cls ? ` class="${cls}"` : ''}/>`;
-
-export const FINISH_COLORS: Record<FloorFinish, { label: string; color: string }> = {
-  parkett: { label: 'Parkett', color: '#c9a072' },
-  laminat: { label: 'Laminat', color: '#d4b48a' },
-  fliesen: { label: 'Fliesen', color: '#e3e1dc' },
-  naturstein: { label: 'Naturstein', color: '#bdb6aa' },
-  teppich: { label: 'Teppich', color: '#9aa3ad' },
-  beton: { label: 'Estrich / Beton', color: '#a9aaa6' },
-  farbe: { label: 'einfarbig', color: '#e8e4dc' },
-};
-
-/** Oberfläche des Bodens aus dem Bodenbelag der Heizlast (eine Angabe für beides) */
-export function finishOf(room: Room): FloorFinish {
-  if (room.floorFinish) return room.floorFinish;
-  const c = room.covering;
-  if (c.startsWith('parkett')) return 'parkett';
-  if (c === 'laminat') return 'laminat';
-  if (c === 'naturstein') return 'naturstein';
-  if (c.startsWith('teppich')) return 'teppich';
-  if (c === 'none') return 'beton';
-  if (c === 'fliesen' || c === 'vinyl') return 'fliesen';
-  return COVERINGS[c] ? 'farbe' : 'fliesen';
-}
-export const floorColorOf = (room: Room): string => room.floorColor ?? FINISH_COLORS[finishOf(room)].color;
 
 export const PLAN_DEFS = `<defs>
 <pattern id="p-hatch" patternUnits="userSpaceOnUse" width="0.08" height="0.08" patternTransform="rotate(45)"><rect width="0.08" height="0.08" class="p-hatch-bg"/><line x1="0" y1="0" x2="0" y2="0.08" class="p-hatch-ln"/></pattern>
@@ -198,7 +171,7 @@ function wallDimsSvg(floor: Floor, o: PlanRenderOpts): string {
 // ---------- Räume ----------
 
 function roomClass(o: PlanRenderOpts, r: Room): string {
-  if (o.phase === 'build') return `p-room fin-${finishOf(r)}`;
+  if (o.phase === 'build') return `p-room${r.heated ? '' : ' unheated'}`;
   if (!r.heated) return `p-room unheated${r.type === 'garage' ? ' garage' : ''}`;
   if (o.phase === 'parts') return 'p-room heated';
   const rr = o.design.rooms.get(r.id);
@@ -214,8 +187,7 @@ function roomsSvg(o: PlanRenderOpts): { fill: string; labels: string } {
   for (const r of floor.rooms) {
     if (r.polygon.length < 3) continue;
     const sel = isSel(o, 'room', r.id);
-    const style = phase === 'build' ? ` style="fill:${floorColorOf(r)}"` : '';
-    fill += `<polygon points="${poly(r.polygon)}" class="${roomClass(o, r)}${sel ? ' sel' : ''}"${style} data-kind="room" data-id="${r.id}"/>`;
+    fill += `<polygon points="${poly(r.polygon)}" class="${roomClass(o, r)}${sel ? ' sel' : ''}" data-kind="room" data-id="${r.id}"/>`;
     if (phase !== 'build' && phase !== 'parts') continue;
     const c = add(centroid(r.polygon), r.labelOffset ?? { x: 0, y: 0 });
     labels += `<text x="${c.x.toFixed(3)}" y="${c.y.toFixed(3)}" class="p-room-name" style="font-size:${fs.toFixed(4)}px">${esc(r.name)}</text>`;
@@ -223,21 +195,6 @@ function roomsSvg(o: PlanRenderOpts): { fill: string; labels: string } {
     if (sub2) labels += `<text x="${c.x.toFixed(3)}" y="${(c.y + fs * 1.25).toFixed(3)}" class="p-room-area" style="font-size:${(fs * 0.85).toFixed(4)}px">${esc(sub2)}</text>`;
   }
   return { fill, labels };
-}
-
-// ---------- Möbel, Treppen ----------
-
-export function furnitureSvg(f: Furniture, sel: boolean, ghost = false): string {
-  const item = CATALOG_BY_KEY[f.catalog];
-  const sym = item ? item.plan(f.width, f.depth) : `<rect x="${-f.width / 2}" y="${-f.depth / 2}" width="${f.width}" height="${f.depth}"/>`;
-  const tr = `translate(${f.pos.x.toFixed(4)} ${f.pos.y.toFixed(4)}) rotate(${f.angle.toFixed(2)})${f.mirrored ? ' scale(-1 1)' : ''}`;
-  return `<g class="p-fur${sel ? ' sel' : ''}${ghost ? ' preview' : ''}${f.visible ? '' : ' off'}" transform="${tr}" data-kind="furniture" data-id="${f.id}"><rect x="${-f.width / 2}" y="${-f.depth / 2}" width="${f.width}" height="${f.depth}" class="p-fur-bg"/><g class="p-sym">${sym}</g></g>`;
-}
-
-export function stairSvg(s: Stair, rise: number, sel: boolean, ghost = false): string {
-  const g = stairGeometry(s, rise);
-  const treads = g.treads.map((t) => `<polygon points="${poly(t.poly)}" class="p-tread"/>`).join('');
-  return `<g class="p-stair${sel ? ' sel' : ''}${ghost ? ' preview' : ''}" data-kind="stair" data-id="${s.id}"><polygon points="${poly(g.outline)}" class="p-stair-bg"/>${treads}<polyline points="${poly(g.walkline)}" class="p-walkline" marker-end="url(#p-arrow)"/><circle cx="${g.walkline[0].x}" cy="${g.walkline[0].y}" r="0.05" class="p-walk-start"/></g>`;
 }
 
 export function belowOf(project: Project, floor: Floor): Floor | null {
@@ -264,12 +221,10 @@ export function planBaseSvg(o: PlanRenderOpts): { under: string; walls: string; 
   const walls = wallsSvg(floor, o);
   under += `<g class="p-l-rooms">${rooms.fill}</g>`;
   under += `<g class="p-l-voids">${floor.voids
-    .map((v) => `<g class="p-void${isSel(o, 'void', v.id) ? ' sel' : ''}${v.stairId ? ' auto' : ''}"${v.stairId ? '' : ` data-kind="void" data-id="${v.id}"`}><polygon points="${poly(v.polygon)}"/>${ln(v.polygon[0], v.polygon[Math.floor(v.polygon.length / 2)])}</g>`)
+    .map((v) => `<g class="p-void${isSel(o, 'void', v.id) ? ' sel' : ''}" data-kind="void" data-id="${v.id}"><polygon points="${poly(v.polygon)}"/>${ln(v.polygon[0], v.polygon[Math.floor(v.polygon.length / 2)])}</g>`)
     .join('')}</g>`;
-  under += `<g class="p-l-stairs">${floor.stairs.map((x) => stairSvg(x, floor.storeyHeight, isSel(o, 'stair', x.id))).join('')}</g>`;
   const wallsSvgStr = `<g class="p-l-walls">${walls.fill}${walls.edges}</g><g class="p-l-openings">${walls.openings}</g>`;
-  let over = `<g class="p-l-furniture${o.phase === 'build' ? '' : ' faded'}">${floor.furniture.map((f) => furnitureSvg(f, isSel(o, 'furniture', f.id))).join('')}</g>`;
-  over += `<g class="p-l-labels">${rooms.labels}${floor.labels
+  let over = `<g class="p-l-labels">${rooms.labels}${floor.labels
     .map((t) => `<text x="${t.pos.x}" y="${t.pos.y}" transform="rotate(${t.angle} ${t.pos.x} ${t.pos.y})" class="p-label${isSel(o, 'label', t.id) ? ' sel' : ''}" style="font-size:${t.size}px" data-kind="label" data-id="${t.id}">${esc(t.text)}</text>`)
     .join('')}</g>`;
   over += `<g class="p-l-dims">${floor.dimensions.map((d) => dimensionSvg(d.a, d.b, d.offset, o.scale, isSel(o, 'dimension', d.id) ? ' sel' : '', `data-kind="dimension" data-id="${d.id}"`)).join('')}${wallDimsSvg(floor, o)}</g>`;

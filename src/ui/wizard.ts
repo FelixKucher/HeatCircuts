@@ -1,5 +1,5 @@
-// Start-Assistent für ein neues Projekt: Gebäudeart → Ausrichtung und Gelände → Standort (Karte, Klima)
-// → Gebäude (Baujahr, Geschosse, Dach) → Heizung (Wärmeerzeuger, System) → Einstieg in den Grundriss.
+// Start-Assistent für ein neues Projekt: Gebäude (Art, Baujahr, Geschosse) → Standort (Karte, Klima)
+// → Heizung (Wärmeerzeuger, System) → Zeichnung laden (PDF, DXF, Bild, IFC) oder ohne Vorlage beginnen.
 
 import type { Compass4, ConstructionSlot, HouseType, Project } from '../model/types';
 import type { Store } from '../model/store';
@@ -13,24 +13,24 @@ import { bindFields, fieldHtml, type FieldSpec, type FieldValue } from './forms'
 import { applyBuildingField, bindSpacingBoxes, locationOptions } from './dialogs';
 import { esc, num } from './format';
 
-export type WizardEntry = 'draw' | 'image' | 'dxf' | 'sample';
+export type WizardEntry = 'draw' | 'pdf' | 'image' | 'dxf' | 'ifc' | 'sample';
 
 export interface WizardHost {
   finish(entry: WizardEntry): void;
   toast(text: string, kind?: 'info' | 'warn'): void;
 }
 
-const STEPS = ['Gebäudeart', 'Ausrichtung', 'Standort', 'Gebäude', 'Heizung', 'Grundriss'];
+const STEPS = ['Gebäude', 'Standort', 'Heizung', 'Zeichnung'];
 
-const HOUSES: { id: HouseType; label: string; note: string; attached: Compass4[]; icon: string }[] = [
-  { id: 'efh', label: 'Einfamilienhaus', note: 'freistehend', attached: [], icon: '<path d="M8 30V17L20 8l12 9v13z"/><path d="M17 30v-7h6v7"/>' },
-  { id: 'bungalow', label: 'Bungalow', note: 'eingeschossig', attached: [], icon: '<path d="M4 30V20l16-7 16 7v10z"/><path d="M17 30v-6h6v6"/>' },
-  { id: 'villa', label: 'Stadtvilla', note: 'zwei Vollgeschosse, Walmdach', attached: [], icon: '<path d="M9 30V14h22v16z"/><path d="M6 14l14-7 14 7"/><path d="M14 20h4M22 20h4M17 30v-5h6v5"/>' },
-  { id: 'dhh', label: 'Doppelhaushälfte', note: 'eine Seite angebaut', attached: ['O'], icon: '<path d="M4 30V17l9-8 9 8v13z" class="dim"/><path d="M20 30V17l9-8 9 8v13z" transform="translate(-2 0)"/>' },
-  { id: 'reh', label: 'Reihenendhaus', note: 'eine Seite angebaut', attached: ['O'], icon: '<path d="M2 30V16l7-6 7 6v14z"/><path d="M16 30V16l7-6 7 6v14zM30 30V16l7-6 7 6v14z" class="dim"/>' },
-  { id: 'rmh', label: 'Reihenmittelhaus', note: 'zwei Seiten angebaut', attached: ['O', 'W'], icon: '<path d="M2 30V16l7-6 7 6v14zM30 30V16l7-6 7 6v14z" class="dim"/><path d="M16 30V16l7-6 7 6v14z"/>' },
-  { id: 'mfh', label: 'Mehrfamilienhaus', note: 'ganzes Gebäude', attached: [], icon: '<path d="M8 32V8h24v24z"/><path d="M13 13h4M23 13h4M13 19h4M23 19h4M13 25h4M23 25h4"/>' },
-  { id: 'whg', label: 'Wohnung', note: 'eine Einheit im Mehrfamilienhaus', attached: [], icon: '<path d="M8 32V8h24v24z" class="dim"/><path d="M8 20h24v6H8z"/>' },
+const HOUSES: { id: HouseType; label: string; note: string; attached: Compass4[] }[] = [
+  { id: 'efh', label: 'Einfamilienhaus', note: 'freistehend', attached: [] },
+  { id: 'bungalow', label: 'Bungalow', note: 'eingeschossig', attached: [] },
+  { id: 'villa', label: 'Stadtvilla', note: 'zwei Vollgeschosse, Walmdach', attached: [] },
+  { id: 'dhh', label: 'Doppelhaushälfte', note: 'eine Seite angebaut', attached: ['O'] },
+  { id: 'reh', label: 'Reihenendhaus', note: 'eine Seite angebaut', attached: ['O'] },
+  { id: 'rmh', label: 'Reihenmittelhaus', note: 'zwei Seiten angebaut', attached: ['O', 'W'] },
+  { id: 'mfh', label: 'Mehrfamilienhaus', note: 'ganzes Gebäude', attached: [] },
+  { id: 'whg', label: 'Wohnung', note: 'eine Einheit im Mehrfamilienhaus', attached: [] },
 ];
 
 const GENERATOR_SUPPLY: Record<string, number> = { wp_luft: 35, wp_sole: 35, gas: 40, oel: 40, pellet: 40, fernwaerme: 40, speicher: 38, sonstige: 40 };
@@ -111,14 +111,18 @@ export class StartWizard {
     const b = p.building;
     switch (this.step) {
       case 0: {
-        const h = HOUSES.find((x) => x.id === site.houseType)!;
+        const ac = AGE_CLASSES.find((a) => b.yearBuilt <= a.until);
+        const tpl = (slot: ConstructionSlot) => Object.entries(CONSTRUCTION_TEMPLATES).filter(([, t]) => t.slot === slot).map(([k, t]) => [k, t.label] as [string, string]);
+        const u = (slot: ConstructionSlot) => num(uValue(slot, b.constructions[slot].layers), 2);
+        const presets: [string, string][] = site.houseType === 'whg' ? [['eg', 'eine Ebene']] : site.houseType === 'bungalow' ? [['eg', 'EG'], ['kg-eg', 'Keller + EG']] : [['eg', 'EG'], ['eg-og', 'EG + OG'], ['eg-dg', 'EG + Dachgeschoss'], ['eg-og-dg', 'EG + OG + DG'], ['kg-eg-og', 'Keller + EG + OG']];
+        const floorsTxt = p.floors.slice().sort((a, c) => a.elevation - c.elevation).map((f) => f.name).join(' · ');
         let extra = '';
         if (['dhh', 'reh', 'rmh'].includes(site.houseType))
-          extra = `<section><h3>Angebaute Seite${site.houseType === 'rmh' ? 'n' : ''} (im Grundriss: oben = Norden der Zeichnung)</h3><div class="chips">${(['N', 'O', 'S', 'W'] as Compass4[])
+          extra = `<div class="field wide"><span class="lab">Angebaute Seite${site.houseType === 'rmh' ? 'n' : ''} (im Plan)</span><div class="chips">${(['N', 'O', 'S', 'W'] as Compass4[])
             .map((c) => `<button class="chip-btn${site.attached.includes(c) ? ' on' : ''}" data-wz-attach="${c}">${{ N: 'oben', O: 'rechts', S: 'unten', W: 'links' }[c]}</button>`)
-            .join('')}</div><p class="note">Die Außenwand auf dieser Seite wird als Haustrennwand zum beheizten Nachbarhaus behandelt (Annahme ${num(site.neighbourTemp, 0)} °C).</p></section>`;
+            .join('')}</div><span class="hint">Außenwände dieser Seite gelten als Trennwand zum beheizten Nachbarn (${num(site.neighbourTemp, 0)} °C).</span></div>`;
         if (site.houseType === 'whg')
-          extra = `<section><h3>Lage der Wohnung</h3><div class="chips">${(
+          extra = `<div class="field wide"><span class="lab">Lage der Wohnung</span><div class="chips">${(
             [
               ['ground', 'Erdgeschoss'],
               ['middle', 'Zwischengeschoss'],
@@ -126,64 +130,27 @@ export class StartWizard {
             ] as const
           )
             .map(([k, l]) => `<button class="chip-btn${site.unitPosition === k ? ' on' : ''}" data-wz-unit="${k}">${l}</button>`)
-            .join('')}</div><p class="note">Böden und Decken zu Nachbarwohnungen gehen mit der angenommenen Nachbartemperatur ein; Wohnungstrennwände legen Sie nach dem Zeichnen je Wand fest.</p></section>`;
-        return `<p class="lead">Was planen Sie? Die Gebäudeart setzt sinnvolle Vorgaben für Nachbarn, Geschosse und Dach. Alles lässt sich später ändern.</p>
-          <div class="house-cards">${HOUSES.map((x) => `<button class="house-card${x.id === site.houseType ? ' is-active' : ''}" data-wz-house="${x.id}" aria-pressed="${x.id === site.houseType}"><svg viewBox="0 0 40 36" aria-hidden="true">${x.icon}</svg><b>${esc(x.label)}</b><span>${esc(x.note)}</span></button>`).join('')}</div>
-          ${extra}
+            .join('')}</div></div>`;
+        return `<p class="lead">Die wichtigsten Angaben für die Heizlast. Alles lässt sich später unter „Gebäude“ ändern.</p>
           <section><h3>Projekt</h3>${this.grid([
             { kind: 'text', key: 'project.name', label: 'Projektname', value: p.name },
             { kind: 'text', key: 'b.client', label: 'Bauherr', value: b.client },
           ])}</section>
-          <p class="note">Gewählt: ${esc(h.label)}.</p>`;
-      }
-      case 1: {
-        const ang = site.north;
-        return `<p class="lead">Wo liegt Norden in Ihrem Grundriss? Klicken oder ziehen Sie auf der Windrose. Das bestimmt Himmelsrichtungen der Wände, die Sonne in 3D und die Lage am Hang.</p>
-          <div class="orient">
-            <svg class="compass-dial" viewBox="-110 -110 220 220" data-wz-dial="1" role="slider" aria-label="Nordrichtung" aria-valuenow="${ang}" tabindex="0">
-              <circle r="100" class="cd-ring"/>
-              ${Array.from({ length: 24 }, (_, i) => `<line x1="0" y1="-100" x2="0" y2="${i % 6 === 0 ? -84 : -92}" transform="rotate(${i * 15})" class="cd-tick"/>`).join('')}
-              <rect x="-34" y="-28" width="68" height="56" rx="3" class="cd-house"/><path d="M-34 -28 L0 -50 L34 -28" class="cd-house"/><text y="6" class="cd-plan">Plan</text>
-              <g transform="rotate(${ang})"><path d="M0 -98 L10 -64 L0 -70 L-10 -64 Z" class="cd-north"/><text y="-104" class="cd-n">N</text></g>
-            </svg>
-            <div>${this.grid([
-              { kind: 'num', key: 'site.north', label: 'Nordrichtung (Drehung von Plan-oben im Uhrzeigersinn)', value: ang, unit: '°', digits: 0 },
-            ])}
-            <div class="chips">${[0, 45, 90, 135, 180, 225, 270, 315].map((a) => `<button class="chip-btn${a === ang ? ' on' : ''}" data-wz-north="${a}">${a}°</button>`).join('')}</div>
-            <section><h3>Gelände</h3>${this.grid([
-              { kind: 'select', key: 'terrain.type', label: 'Gelände', value: p.terrain.type, options: [['flat', 'eben'], ['slope', 'Hanglage']] },
-              { kind: 'num', key: 'terrain.gradeLow', label: p.terrain.type === 'slope' ? 'Geländehöhe Talseite (zu OK FFB EG)' : 'Geländehöhe (zu OK FFB EG)', value: p.terrain.gradeLow, unit: 'm', digits: 2 },
-              ...(p.terrain.type === 'slope'
-                ? ([
-                    { kind: 'num', key: 'terrain.rise', label: 'Anstieg über die Hausbreite', value: p.terrain.rise, unit: 'm', digits: 2 },
-                    { kind: 'select', key: 'terrain.uphill', label: 'Bergseite (im Plan)', value: p.terrain.uphill, options: [['N', 'oben'], ['O', 'rechts'], ['S', 'unten'], ['W', 'links']] },
-                  ] as FieldSpec[])
-                : []),
-            ])}<p class="note">Bei Hanglage berechnet HeatCircuits die Erdanschüttung je Außenwand (EN ISO 13370), z. B. Garage talseitig auf Geländeniveau, Rückwand bergseitig im Erdreich.</p></section></div>
-          </div>`;
-      }
-      case 2:
-        return this.locationHtml(p);
-      case 3: {
-        const ac = AGE_CLASSES.find((a) => b.yearBuilt <= a.until);
-        const tpl = (slot: ConstructionSlot) => Object.entries(CONSTRUCTION_TEMPLATES).filter(([, t]) => t.slot === slot).map(([k, t]) => [k, t.label] as [string, string]);
-        const u = (slot: ConstructionSlot) => num(uValue(slot, b.constructions[slot].layers), 2);
-        const presets: [string, string][] = site.houseType === 'whg' ? [['eg', 'eine Ebene']] : site.houseType === 'bungalow' ? [['eg', 'EG'], ['kg-eg', 'Keller + EG']] : [['eg', 'EG'], ['eg-og', 'EG + OG'], ['eg-dg', 'EG + Dachgeschoss'], ['eg-og-dg', 'EG + OG + DG'], ['kg-eg-og', 'Keller + EG + OG']];
-        const floorsTxt = p.floors.slice().sort((a, c) => a.elevation - c.elevation).map((f) => f.name).join(' · ');
-        return `<section><h3>Baujahr und Bauteile</h3>${this.grid([
+          <section><h3>Gebäude</h3><div class="fields cols">${fieldHtml({ kind: 'select', key: 'site.houseType', label: 'Gebäudeart', value: site.houseType, options: HOUSES.map((x) => [x.id, `${x.label} · ${x.note}`] as [string, string]) }, 'wz')}${extra}</div>
+          ${this.grid([
             { kind: 'num', key: 'b.yearBuilt', label: 'Baujahr', value: b.yearBuilt, digits: 0, hint: `Baualtersklasse ${ac?.label ?? ''} – Aufbauten werden vorbelegt` },
             { kind: 'select', key: 'b.windowType', label: 'Fenster', value: b.windowType, options: Object.entries(WINDOW_TYPES).map(([k, w]) => [k, `${w.label} · U ${num(w.u, 2)}`] as [string, string]) },
             { kind: 'select', key: 'tpl.extWall', label: `Außenwand · U ${u('extWall')}`, value: b.constructions.extWall.template, options: [...tpl('extWall'), ['custom', 'eigener Aufbau']] },
             { kind: 'select', key: 'b.basement', label: 'Unter dem untersten Geschoss', value: b.basement, options: [['none', 'Bodenplatte auf Erdreich'], ['unheated', 'unbeheizter Keller']] },
-          ])}<p class="note">Jedes Bauteil lässt sich nach dem Zeichnen einzeln anpassen (Phase „Bauteile“).</p></section>
-          <section><h3>Geschosse</h3><div class="chips">${presets.map(([k, l]) => `<button class="chip-btn" data-wz-preset="${k}">${l}</button>`).join('')}</div><p class="note">Aktuell: ${esc(floorsTxt)}. Weitere Geschosse fügen Sie jederzeit über die Geschossleiste hinzu.</p></section>
-          ${site.houseType !== 'whg' ? `<section><h3>Dach</h3>${this.grid([
-            { kind: 'select', key: 'roof.type', label: 'Dachform', value: p.roof.type, options: [['gable', 'Satteldach'], ['hip', 'Walmdach'], ['shed', 'Pultdach'], ['flat', 'Flachdach'], ['none', 'kein Dach']] },
-            { kind: 'num', key: 'roof.pitch', label: 'Dachneigung', value: p.roof.pitch, unit: '°', digits: 0 },
-            { kind: 'select', key: 'roof.insulation', label: 'Dämmebene', value: p.roof.insulation, options: [['topSlab', 'oberste Geschossdecke (Dachraum kalt)'], ['rafters', 'Dachfläche (Dachgeschoss beheizt)']] },
-          ])}</section>` : ''}`;
+            ...(site.houseType !== 'whg'
+              ? ([{ kind: 'select', key: 'roof.insulation', label: 'Oberer Abschluss', value: p.roof.insulation, options: [['topSlab', 'oberste Geschossdecke (Dachraum kalt)'], ['rafters', 'Dachschräge (Dachgeschoss beheizt)']] }] as FieldSpec[])
+              : []),
+          ])}</section>
+          <section><h3>Geschosse</h3><div class="chips">${presets.map(([k, l]) => `<button class="chip-btn" data-wz-preset="${k}">${l}</button>`).join('')}</div><p class="note">Aktuell: ${esc(floorsTxt)}. Je Geschoss laden Sie später eine eigene Zeichnung.</p></section>`;
       }
-      case 4:
+      case 1:
+        return this.locationHtml(p);
+      case 2:
         return `<section><h3>Wärmeerzeuger</h3><div class="system-cards gen">${Object.entries(HEAT_SOURCE_TYPES)
           .filter(([k]) => k !== 'speicher')
           .map(([k, l]) => `<button class="system-card${p.design.generator === k ? ' is-active' : ''}" data-wz-gen="${k}" aria-pressed="${p.design.generator === k}"><b>${esc(l)}</b><span class="muted">Ziel-Vorlauf ${GENERATOR_SUPPLY[k] ?? 40} °C</span></button>`)
@@ -196,12 +163,14 @@ export class StartWizard {
             .map((x) => `<label class="chip-check"><input type="checkbox" data-spacing="${x}"${p.design.allowedSpacings.some((y) => Math.abs(y - x) < 1e-9) ? ' checked' : ''}/> ${num(x * 100, 1).replace(/,0$/, '')} cm</label>`)
             .join('')}</div><p class="note">Zulässige Verlegeabstände der automatischen Auslegung. Wand- und Deckenheizung legen Sie später je Raum fest.</p></section>`;
       default:
-        return `<p class="lead">Wie möchten Sie den Grundriss erstellen?</p>
+        return `<p class="lead">Welche Zeichnung legen Sie zugrunde? Sie wird maßstäblich hinterlegt; darauf zeichnen Sie die Räume nach und planen die Heizkreise.</p>
           <div class="entry-cards">
-            <button class="entry-card" data-wz-entry="draw"><svg viewBox="0 0 40 32"><rect x="4" y="4" width="20" height="16" class="e-wall"/><rect x="24" y="4" width="12" height="24" class="e-wall"/><path d="M8 24h12" class="e-dim"/></svg><b>Direkt zeichnen</b><span>Räume aufziehen, Wände zeichnen, Türen und Fenster setzen</span></button>
-            <button class="entry-card" data-wz-entry="image"><svg viewBox="0 0 40 32"><rect x="4" y="4" width="32" height="24" rx="2" class="e-img"/><path d="M4 22l9-8 7 6 5-4 11 8" class="e-img"/></svg><b>Grundrissbild übernehmen</b><span>Bild oder Scan laden, Maßstab kalibrieren, nachzeichnen oder Räume erkennen lassen</span></button>
-            <button class="entry-card" data-wz-entry="dxf"><svg viewBox="0 0 40 32"><path d="M6 26V6h20l8 8v12z" class="e-img"/><text x="11" y="22" class="e-txt">DXF</text></svg><b>DXF-Grundriss laden</b><span>CAD-Plan des Architekten maßstäblich als Vorlage (AutoCAD, CADCraft)</span></button>
-            <button class="entry-card" data-wz-entry="sample"><svg viewBox="0 0 40 32"><path d="M6 28V14L20 4l14 10v14z" class="e-wall"/></svg><b>Beispielhaus ansehen</b><span>fertig geplantes Einfamilienhaus zum Ausprobieren</span></button>
+            <button class="entry-card" data-wz-entry="pdf"><svg viewBox="0 0 40 32"><path d="M6 26V6h20l8 8v12z" class="e-img"/><text x="11" y="22" class="e-txt">PDF</text></svg><b>PDF-Plan</b><span>Plan des Architekten, Maßstab wird aus dem Plankopf erkannt</span></button>
+            <button class="entry-card" data-wz-entry="dxf"><svg viewBox="0 0 40 32"><path d="M6 26V6h20l8 8v12z" class="e-img"/><text x="11" y="22" class="e-txt">DXF</text></svg><b>DXF-Plan</b><span>CAD-Zeichnung maßstäblich als Vektorvorlage (DWG vorher nach DXF wandeln)</span></button>
+            <button class="entry-card" data-wz-entry="image"><svg viewBox="0 0 40 32"><rect x="4" y="4" width="32" height="24" rx="2" class="e-img"/><path d="M4 22l9-8 7 6 5-4 11 8" class="e-img"/></svg><b>Bild oder Scan</b><span>Maßstab mit zwei Punkten kalibrieren, Räume erkennen lassen</span></button>
+            <button class="entry-card" data-wz-entry="ifc"><svg viewBox="0 0 40 32"><path d="M6 26V6h20l8 8v12z" class="e-img"/><text x="12" y="22" class="e-txt">IFC</text></svg><b>IFC-Modell (BIM)</b><span>Räume, Wände, Fenster und Türen werden direkt übernommen</span></button>
+            <button class="entry-card" data-wz-entry="draw"><svg viewBox="0 0 40 32"><rect x="4" y="4" width="20" height="16" class="e-wall"/><rect x="24" y="4" width="12" height="24" class="e-wall"/></svg><b>Ohne Vorlage</b><span>Räume direkt aufziehen</span></button>
+            <button class="entry-card" data-wz-entry="sample"><svg viewBox="0 0 40 32"><path d="M6 28V14L20 4l14 10v14z" class="e-wall"/></svg><b>Beispiel ansehen</b><span>fertig geplantes Einfamilienhaus</span></button>
           </div>`;
     }
   }
@@ -287,16 +256,6 @@ export class StartWizard {
       this.setLocation(lat, lon, undefined, '');
       return;
     }
-    const dial = target.closest('[data-wz-dial]') as SVGSVGElement | null;
-    if (dial) {
-      const r = dial.getBoundingClientRect();
-      const dx = (e as MouseEvent).clientX - (r.left + r.width / 2);
-      const dy = (e as MouseEvent).clientY - (r.top + r.height / 2);
-      const ang = Math.round(((Math.atan2(dx, -dy) * 180) / Math.PI + 360) % 360 / 5) * 5;
-      this.store.commit((p) => (p.site.north = ang % 360));
-      this.render();
-      return;
-    }
     const t = target.closest('button') as HTMLButtonElement | null;
     if (!t || t.disabled) return;
     const ds = t.dataset;
@@ -304,18 +263,6 @@ export class StartWizard {
     if (ds.wz === 'prev') return this.open(this.step - 1);
     if (ds.wz === 'next') return this.open(this.step + 1);
     if (ds.wzStep) return this.open(Number(ds.wzStep));
-    if (ds.wzHouse) {
-      const h = HOUSES.find((x) => x.id === ds.wzHouse)!;
-      this.store.commit((p) => {
-        p.site.houseType = h.id;
-        p.site.attached = h.attached.slice();
-        if (h.id === 'villa') p.roof = { ...p.roof, type: 'hip', pitch: 22 };
-        if (h.id === 'bungalow') p.roof = { ...p.roof, type: 'hip', pitch: 25 };
-        if (h.id === 'whg') p.roof = { ...p.roof, type: 'none' };
-        if (h.id === 'mfh') p.roof = { ...p.roof, type: 'gable', pitch: 35 };
-      });
-      return this.render();
-    }
     if (ds.wzAttach) {
       const c = ds.wzAttach as Compass4;
       this.store.commit((p) => {
@@ -328,10 +275,6 @@ export class StartWizard {
     }
     if (ds.wzUnit) {
       this.store.commit((p) => (p.site.unitPosition = ds.wzUnit as Project['site']['unitPosition']));
-      return this.render();
-    }
-    if (ds.wzNorth) {
-      this.store.commit((p) => (p.site.north = Number(ds.wzNorth)));
       return this.render();
     }
     if (ds.wzMapview) {
@@ -398,6 +341,19 @@ export class StartWizard {
     const s = this.store;
     const [g, f] = key.split('.');
     const numv = typeof val === 'number' ? val : null;
+    if (key === 'site.houseType') {
+      const h = HOUSES.find((x) => x.id === val);
+      if (!h) return;
+      s.commit((p) => {
+        p.site.houseType = h.id;
+        p.site.attached = h.attached.slice();
+        if (h.id === 'villa') p.roof = { ...p.roof, type: 'hip', pitch: 22 };
+        if (h.id === 'bungalow') p.roof = { ...p.roof, type: 'hip', pitch: 25 };
+        if (h.id === 'whg') p.roof = { ...p.roof, type: 'none' };
+        if (h.id === 'mfh') p.roof = { ...p.roof, type: 'gable', pitch: 35 };
+      });
+      return this.render();
+    }
     if (g === 'site') {
       if (f === 'station' && val) {
         const st = CLIMATE_LOCATIONS[String(val)];
@@ -419,15 +375,6 @@ export class StartWizard {
         return;
       }
       if (f === 'place') s.commit((p) => (p.site.place = String(val ?? '')));
-      if (f === 'north' && numv !== null) s.commit((p) => (p.site.north = ((Math.round(numv) % 360) + 360) % 360));
-      return this.render();
-    }
-    if (g === 'terrain') {
-      s.commit((p) => {
-        const t = p.terrain as unknown as Record<string, unknown>;
-        if (typeof val === 'number') t[f] = f === 'rise' ? Math.max(0, val) : val;
-        else if (typeof val === 'string') t[f] = val;
-      });
       return this.render();
     }
     if (g === 'd') {

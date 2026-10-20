@@ -4,7 +4,6 @@
 import type { Compass4, Floor, Project, Wall } from './types';
 import { pointInPolygon } from '../geometry/geom';
 import { kindForStyle } from '../cad/openings';
-import { stairGeometry } from '../cad/stairs';
 
 const SIDE_OFF = 0.12;
 
@@ -54,24 +53,10 @@ export function classifyWall(w: Wall, f: Floor, attached: Compass4[]): Wall['kin
 }
 
 export function normalizeProject(p: Project): void {
-  const sorted = p.floors.slice().sort((a, b) => a.elevation - b.elevation);
   for (const f of p.floors) {
     for (const w of f.walls) {
       if (w.kindAuto) w.kind = classifyWall(w, f, p.site?.attached ?? []);
       for (const o of w.openings) if (o.style) o.kind = kindForStyle(o.style, w);
     }
-  }
-  // Deckenöffnungen aus Treppen
-  for (let i = 0; i < sorted.length; i++) {
-    const f = sorted[i];
-    const below = sorted[i - 1];
-    const keep = f.voids.filter((v) => !v.stairId);
-    if (below)
-      for (const s of below.stairs ?? []) {
-        if (!s.cutCeiling) continue;
-        const g = stairGeometry(s, below.storeyHeight);
-        keep.push({ id: `v-${s.id}`, stairId: s.id, kind: s.type === 'spiral' ? 'spiral' : 'stair', polygon: g.outline, ...(s.type === 'spiral' ? { center: { ...s.pos }, radius: s.length / 2 } : {}) });
-      }
-    f.voids = keep;
   }
 }

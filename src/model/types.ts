@@ -18,7 +18,6 @@ export type RoofType = 'gable' | 'hip' | 'shed' | 'flat' | 'none';
 /** Darstellung einer Öffnung (Plan/3D); die bauphysikalische Art steht in `kind` */
 export type OpeningStyle = 'door' | 'doubleDoor' | 'slidingDoor' | 'passage' | 'window' | 'frenchWindow' | 'roofWindow' | 'garageDoor';
 export type FloorFinish = 'parkett' | 'laminat' | 'fliesen' | 'naturstein' | 'teppich' | 'beton' | 'farbe';
-export type StairType = 'straight' | 'lshape' | 'spiral';
 export type HouseType = 'efh' | 'dhh' | 'rmh' | 'reh' | 'bungalow' | 'villa' | 'mfh' | 'whg';
 export type Compass4 = 'N' | 'O' | 'S' | 'W';
 
@@ -128,41 +127,6 @@ export interface Room {
   ceilingConstruction?: Construction | null;
 }
 
-export interface Furniture {
-  id: string;
-  /** Schlüssel im Möbelkatalog */
-  catalog: string;
-  name: string;
-  pos: Vec;
-  /** Drehung im Uhrzeigersinn (Plan) in Grad */
-  angle: number;
-  width: number;
-  depth: number;
-  height: number;
-  /** Unterkante über Fußboden */
-  elevation: number;
-  color: string;
-  mirrored: boolean;
-  visible: boolean;
-}
-
-/** Treppe im unteren Geschoss; der Deckendurchbruch im Geschoss darüber entsteht automatisch */
-export interface Stair {
-  id: string;
-  type: StairType;
-  pos: Vec;
-  angle: number;
-  width: number;
-  /** Lauflänge (gerade, L inkl. Podest) bzw. Durchmesser (Spindel) */
-  length: number;
-  length2: number;
-  /** Steigungen; null = aus der Geschosshöhe (≈ 17,5 cm) */
-  steps: number | null;
-  clockwise: boolean;
-  color: string;
-  cutCeiling: boolean;
-}
-
 export interface Dimension {
   id: string;
   a: Vec;
@@ -208,8 +172,6 @@ export interface FloorVoid {
   radius?: number;
   /** gerade Treppe: Laufrichtung (Antritt → Austritt) */
   direction?: 'x+' | 'x-' | 'y+' | 'y-';
-  /** automatisch aus einer Treppe des Geschosses darunter erzeugt */
-  stairId?: string;
 }
 
 export interface BackgroundImage {
@@ -247,8 +209,6 @@ export interface Floor {
   floorThickness: number;
   /** in 3D anzeigen */
   visible: boolean;
-  furniture: Furniture[];
-  stairs: Stair[];
   dimensions: Dimension[];
   labels: Label[];
 }

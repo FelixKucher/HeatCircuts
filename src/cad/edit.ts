@@ -205,10 +205,9 @@ export function moveSelection(base: Floor, floor: Floor, sel: SelItem[], d: Vec,
         r.polygon = br.polygon.map((p) => add(p, d));
         if (br.connector) r.connector = add(br.connector, d);
       }
-    } else if (s.kind === 'furniture' || s.kind === 'stair' || s.kind === 'label') {
-      const key = s.kind === 'furniture' ? 'furniture' : s.kind === 'stair' ? 'stairs' : 'labels';
-      const bf = findById(base[key] as { id: string; pos: Vec }[], s.id);
-      const f = findById(floor[key] as { id: string; pos: Vec }[], s.id);
+    } else if (s.kind === 'label') {
+      const bf = findById(base.labels, s.id);
+      const f = findById(floor.labels, s.id);
       if (bf && f) f.pos = add(bf.pos, d);
     } else if (s.kind === 'manifold') {
       const bf = findById(base.manifolds, s.id);
@@ -217,7 +216,7 @@ export function moveSelection(base: Floor, floor: Floor, sel: SelItem[], d: Vec,
     } else if (s.kind === 'void') {
       const bf = findById(base.voids, s.id);
       const f = findById(floor.voids, s.id);
-      if (bf && f && !f.stairId) {
+      if (bf && f) {
         f.polygon = bf.polygon.map((p) => add(p, d));
         if (bf.center) f.center = add(bf.center, d);
       }
@@ -243,11 +242,9 @@ export function deleteSelection(project: Project, floor: Floor, sel: SelItem[]):
   const r = ids('room');
   floor.rooms = floor.rooms.filter((x) => !r.has(x.id));
   floor.routes = floor.routes.filter((x) => !r.has(x.roomId) && !ids('route').has(x.id));
-  floor.furniture = floor.furniture.filter((x) => !ids('furniture').has(x.id));
-  floor.stairs = floor.stairs.filter((x) => !ids('stair').has(x.id));
   floor.dimensions = floor.dimensions.filter((x) => !ids('dimension').has(x.id));
   floor.labels = floor.labels.filter((x) => !ids('label').has(x.id));
-  floor.voids = floor.voids.filter((x) => !ids('void').has(x.id) || !!x.stairId);
+  floor.voids = floor.voids.filter((x) => !ids('void').has(x.id));
   const m = ids('manifold');
   if (m.size) {
     floor.manifolds = floor.manifolds.filter((x) => !m.has(x.id));
@@ -260,8 +257,6 @@ export function deleteSelection(project: Project, floor: Floor, sel: SelItem[]):
 export interface Clip {
   walls: Wall[];
   rooms: Floor['rooms'];
-  furniture: Floor['furniture'];
-  stairs: Floor['stairs'];
   dimensions: Floor['dimensions'];
   labels: Floor['labels'];
 }
@@ -272,8 +267,6 @@ export function copySelection(floor: Floor, sel: SelItem[]): Clip {
   return {
     walls: c(floor.walls.filter((x) => has('wall', x.id))),
     rooms: c(floor.rooms.filter((x) => has('room', x.id))),
-    furniture: c(floor.furniture.filter((x) => has('furniture', x.id))),
-    stairs: c(floor.stairs.filter((x) => has('stair', x.id))),
     dimensions: c(floor.dimensions.filter((x) => has('dimension', x.id))),
     labels: c(floor.labels.filter((x) => has('label', x.id))),
   };
@@ -295,16 +288,6 @@ export function pasteClip(floor: Floor, clip: Clip, d: Vec): SelItem[] {
     floor.rooms.push(n);
     sel.push({ kind: 'room', id: n.id });
   }
-  for (const f of clip.furniture) {
-    const n = { ...f, id: uid('F'), pos: mv(f.pos) };
-    floor.furniture.push(n);
-    sel.push({ kind: 'furniture', id: n.id });
-  }
-  for (const s of clip.stairs) {
-    const n = { ...s, id: uid('S'), pos: mv(s.pos) };
-    floor.stairs.push(n);
-    sel.push({ kind: 'stair', id: n.id });
-  }
   for (const s of clip.dimensions) {
     const n = { ...s, id: uid('D'), a: mv(s.a), b: mv(s.b) };
     floor.dimensions.push(n);
@@ -322,8 +305,7 @@ export function pasteClip(floor: Floor, clip: Clip, d: Vec): SelItem[] {
 export function rotateSelection(floor: Floor, sel: SelItem[], deg: number): void {
   const pts: Vec[] = [];
   const wallIds = new Set(sel.filter((s) => s.kind === 'wall').map((s) => s.id));
-  const objs = () =>
-    sel.map((s) => (s.kind === 'furniture' ? findById(floor.furniture, s.id) : s.kind === 'stair' ? findById(floor.stairs, s.id) : s.kind === 'label' ? findById(floor.labels, s.id) : undefined)).filter((x): x is NonNullable<typeof x> => !!x);
+  const objs = () => sel.map((s) => (s.kind === 'label' ? findById(floor.labels, s.id) : undefined)).filter((x): x is NonNullable<typeof x> => !!x);
   for (const w of floor.walls) if (wallIds.has(w.id)) pts.push(w.a, w.b);
   for (const s of sel) {
     const r = s.kind === 'room' ? findById(floor.rooms, s.id) : undefined;

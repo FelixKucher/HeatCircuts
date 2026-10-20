@@ -1,16 +1,14 @@
-// HeatCircuits: Haus zeichnen und Flächenheizung planen – eine Anwendung in fünf Arbeitsphasen.
+// HeatCircuits: Heizkreise auf einer geladenen Zeichnung planen – Vorlage, Räume, Heizlast, Loops, Bericht.
 
 import './styles.css';
-import type { ImageStore, OpeningStyle, Project, StairType, Vec } from './model/types';
+import type { ImageStore, OpeningStyle, Project, Vec } from './model/types';
 import { PHASES, Store, type Phase } from './model/store';
 import { migrateProject, newFloor, newProject, newRoom, uid } from './model/factory';
 import { createSampleProject } from './model/sample';
-import { CATALOG, CATEGORIES, CATALOG_BY_KEY, catalogIcon } from './cad/furniture';
 import { OPENING_STYLES } from './cad/openings';
 import { cloneFloorShell, copySelection, deleteSelection, moveSelection, pasteClip, rotateSelection, type Clip } from './cad/edit';
 import { PlanView, type Tool } from './ui/plan';
 import { PropsPanel } from './ui/props';
-import { View3D } from './ui/view3d';
 import { WallView } from './ui/wallview';
 import { StartWizard, type WizardEntry } from './ui/wizard';
 import { openBuildingDialog, openDesignDialog, openModal, resultTable, tableCsv, tableHtml, type ResultsTab } from './ui/dialogs';
@@ -18,7 +16,6 @@ import { autosave, loadAutosave, offerDownload, parseProjectFile, safeFilename, 
 import { exportFloorSvg } from './io/export';
 import { buildReportHtml } from './io/report';
 import { dxfBackground, exportDxf, parseDxf } from './io/dxf';
-import { fromHausCad, isHausCad } from './io/hauscad';
 import { esc, level, num, parseNum } from './ui/format';
 import { bbox, v } from './geometry/geom';
 import { floorBounds } from './ui/render';
@@ -40,8 +37,6 @@ const initial = createSampleProject();
 const store = new Store(initial.project, initial.images);
 let clip: Clip | null = null;
 let pasteCount = 0;
-type Layout = 'plan' | 'split' | '3d';
-let layout: Layout = 'split';
 
 // ---------- Dialoge für Texteingaben ----------
 function ask(title: string, value: string, unit = ''): Promise<string | null> {
@@ -76,11 +71,6 @@ const plan = new PlanView($('plan-host'), store, {
   manifoldPlaced: () => runAutoLayout(true),
 });
 
-const view3d = new View3D($('view-host'), store, (kind, id, wallId, floorId) => {
-  if (floorId && floorId !== store.activeFloorId) store.setFloor(floorId);
-  store.select({ kind: kind as never, id, wallId });
-});
-
 const wallView = new WallView($('stage'), store, () => plan.render());
 
 const props = new PropsPanel($('sidebar'), store, {
@@ -110,11 +100,8 @@ function setPhase(p: Phase): void {
   plan.setTool('select');
   store.select(null);
   store.setPhase(p);
-  view3d.options.showHeating = p === 'heating' || p === 'circuits' || p === 'results';
   resultsOpen = p === 'results';
   renderResults();
-  render3dCtl();
-  view3d.requestRebuild();
 }
 
 function renderPhasebar(): void {
@@ -145,9 +132,7 @@ const TOOLDEF: Record<Tool, { label: string; key: string; icon: string }> = {
   wall: { label: 'Wand', key: 'W', icon: ic('<path d="M3 20V8h8V4h10v16z" class="fillish"/>') },
   room: { label: 'Polygon', key: 'P', icon: ic('<path d="M4 5h10v5h6v9H4z"/><circle cx="4" cy="5" r="1.6"/><circle cx="14" cy="10" r="1.6"/><circle cx="20" cy="19" r="1.6"/>') },
   opening: { label: 'Öffnung', key: 'O', icon: ic('<path d="M3 12h4M17 12h4" class="thick"/><path d="M7 12a10 10 0 0 1 10-10M7 12h10"/>') },
-  stair: { label: 'Treppe', key: 'T', icon: ic('<path d="M3 20h4v-4h4v-4h4V8h4V4h2"/>') },
-  void: { label: 'Luftraum', key: 'U', icon: ic('<rect x="4" y="4" width="16" height="16"/><path d="M4 4l16 16M20 4 4 20"/>') },
-  furniture: { label: 'Möbel', key: 'F', icon: ic('<rect x="3" y="9" width="18" height="8" rx="2"/><path d="M5 9V6h14v3M5 17v2M19 17v2"/>') },
+  void: { label: 'Aussparung', key: 'U', icon: ic('<rect x="4" y="4" width="16" height="16"/><path d="M4 4l16 16M20 4 4 20"/>') },
   dimension: { label: 'Maß', key: 'D', icon: ic('<path d="M4 8v8M20 8v8M4 12h16M7 9l-3 3 3 3M17 9l3 3-3 3"/>') },
   label: { label: 'Text', key: 'X', icon: ic('<path d="M5 6V4h14v2M12 4v16M9 20h6"/>') },
   calibrate: { label: 'Maßstab', key: 'K', icon: ic('<path d="M3 16 16 3l5 5L8 21z"/><path d="M7 12l2 2M10 9l2 2M13 6l2 2"/>') },
@@ -157,66 +142,34 @@ const TOOLDEF: Record<Tool, { label: string; key: string; icon: string }> = {
   painter: { label: 'Format', key: 'Y', icon: ic('<path d="M4 4h12v5H4z"/><path d="M16 6h3v6h-8v3"/><path d="M10 15h2v6h-2z"/>') },
 };
 const PHASE_TOOLS: Record<Phase, (Tool | '|')[]> = {
-  build: ['select', 'pan', '|', 'roomRect', 'wall', 'room', 'opening', 'stair', 'void', '|', 'furniture', 'dimension', 'label', 'calibrate', '|', 'painter'],
+  build: ['select', 'pan', '|', 'calibrate', '|', 'roomRect', 'room', 'void', '|', 'wall', 'opening', '|', 'dimension', 'label'],
   parts: ['select', 'pan', '|', 'painter'],
   heating: ['select', 'pan', '|', 'painter'],
   circuits: ['select', 'pan', '|', 'manifold', 'heatSource', 'route'],
   results: ['select', 'pan'],
 };
 
-// Modus „Heizung“: 2D-Plan für die Loop-Planung; „Erweitert“: zusätzlich Haus-CAD (Möbel, Treppen) und 3D
-type Mode = 'loop' | 'full';
-let mode: Mode = 'loop';
-const ADV_TOOLS = new Set<Tool>(['furniture', 'stair']);
-function toolsFor(ph: Phase): (Tool | '|')[] {
-  const list = PHASE_TOOLS[ph].filter((t) => t === '|' || mode === 'full' || !ADV_TOOLS.has(t));
-  return list.filter((t, i) => t !== '|' || (i > 0 && i < list.length - 1 && list[i - 1] !== '|'));
-}
-function setMode(m: Mode, persist = true): void {
-  mode = m;
-  document.documentElement.dataset.mode = m;
-  plan.hidden = new Set(m === 'loop' ? ['furniture'] : []);
-  $('btn-mode').setAttribute('aria-pressed', String(m === 'full'));
-  if (persist)
-    try {
-      localStorage.setItem('hc.mode', m);
-    } catch {
-      /* ohne Speicher */
-    }
-  if (m === 'loop') {
-    if (store.selection.some((x) => x.kind === 'furniture')) store.select(store.selection.filter((x) => x.kind !== 'furniture'));
-    if (!toolsFor(store.phase).includes(plan.tool)) plan.setTool('select');
-    if (layout !== 'plan') setLayout('plan');
-  }
-  renderTools();
-  plan.render();
-}
-
 function renderTools(): void {
   const t = plan.tool;
-  $('toolbar').innerHTML = toolsFor(store.phase)
+  $('toolbar').innerHTML = PHASE_TOOLS[store.phase]
     .map((id) => (id === '|' ? '<span class="tool-sep"></span>' : `<button class="tool${t === id ? ' is-active' : ''}" data-tool="${id}" title="${esc(TOOLDEF[id].label)} (${TOOLDEF[id].key})" aria-pressed="${t === id}">${TOOLDEF[id].icon}<span>${esc(TOOLDEF[id].label)}</span></button>`))
     .join('');
   const opts = $('tool-options');
   let h = '';
   if (t === 'opening') h = (Object.keys(OPENING_STYLES) as OpeningStyle[]).map((k) => `<button class="chip-btn${plan.openingStyle === k ? ' on' : ''}" data-op="${k}">${esc(OPENING_STYLES[k].label)}</button>`).join('');
-  else if (t === 'stair') h = ([['straight', 'gerade'], ['lshape', 'L mit Podest'], ['spiral', 'Spindel']] as [StairType, string][]).map(([k, l]) => `<button class="chip-btn${plan.stairType === k ? ' on' : ''}" data-stair="${k}">${l}</button>`).join('');
   else if (t === 'wall' || t === 'roomRect') h = `<label for="opt-thick">Wanddicke</label><span class="inp-wrap small"><input id="opt-thick" type="text" inputmode="decimal" value="${num(store.project.settings.wallThickness * 100, 1)}"/><span class="unit">cm</span></span><span class="opt-note">${t === 'wall' ? 'Länge tippen + Enter · Doppelklick beendet' : 'Rechteck = Wandachsen, lichte Maße werden angezeigt'}</span>`;
-  else if (t === 'furniture') h = `<span class="chip-btn on">${esc(CATALOG_BY_KEY[plan.catalogKey]?.name ?? '')}</span><span class="opt-note">Klicken setzt · ⇧ für mehrere · Esc beendet</span>`;
   else if (t === 'painter') h = `<span class="opt-note strong">${plan.painter ? `Format von ${esc(plan.painter.label)} – Ziele anklicken` : 'Quelle anklicken, dann Ziele'}</span><span class="opt-note">${store.phase === 'build' ? 'überträgt Darstellung und Maße' : store.phase === 'parts' ? 'überträgt Art, Aufbau und U-Werte' : 'überträgt Heizflächen und Belag'}</span>`;
-  else if (t === 'calibrate') h = `<span class="opt-note strong">Zwei Punkte einer bekannten Strecke im Grundrissbild anklicken</span>`;
+  else if (t === 'calibrate') h = `<span class="opt-note strong">Zwei Punkte einer bekannten Strecke in der Zeichnung anklicken</span>`;
   else if (t === 'manifold') h = `<span class="opt-note strong">Verteiler setzen – danach werden die Heizkreise automatisch verteilt</span>`;
   else if (t === 'route') h = `<span class="opt-note strong">Raum anklicken, Wegpunkte setzen, auf den Verteiler klicken</span>`;
   if (!h && (t === 'select' || t === 'pan')) h = `<span class="opt-note">${t === 'select' ? 'Klicken wählt · Ziehen verschiebt · Rahmen wählt mehrere · ⇧ ergänzt' : 'Ziehen verschiebt die Ansicht · Mausrad zoomt'}</span>`;
   opts.innerHTML = `<span class="opt-tool">${TOOLDEF[t].icon}${esc(TOOLDEF[t].label)}</span>${h}`;
-  opts.hidden = layout === '3d';
   renderLeft();
 }
 
 $('toolbar').addEventListener('click', (e) => {
   const b = (e.target as HTMLElement).closest<HTMLElement>('[data-tool]');
   if (!b) return;
-  if (layout === '3d') setLayout('split');
   if (wallView.isOpen) wallView.close();
   plan.setTool(b.dataset.tool as Tool);
 });
@@ -224,10 +177,6 @@ $('tool-options').addEventListener('click', (e) => {
   const b = e.target as HTMLElement;
   if (b.dataset.op) {
     plan.openingStyle = b.dataset.op as OpeningStyle;
-    renderTools();
-  }
-  if (b.dataset.stair) {
-    plan.stairType = b.dataset.stair as StairType;
     renderTools();
   }
 });
@@ -239,29 +188,18 @@ $('tool-options').addEventListener('change', (e) => {
   }
 });
 
-// ---------- linke Leiste: Katalog bzw. Raumliste ----------
-let catQuery = '';
+// Befehle aus den Seitenleisten (z. B. Zeichnung laden)
+$('sidebar').addEventListener('click', (e) => {
+  const c = (e.target as HTMLElement).closest<HTMLElement>('[data-cmd]');
+  if (c) void runCommand(c.dataset.cmd!);
+});
+
+// ---------- linke Leiste: Vorlage und Raumliste ----------
 function renderLeft(): void {
   const lp = $('leftpanel');
   const f = store.floor;
   const d = store.design;
-  if (store.phase === 'build' && mode === 'full') {
-    const items = CATALOG.filter((c) => !catQuery || c.name.toLowerCase().includes(catQuery) || c.category.toLowerCase().includes(catQuery));
-    const focus = document.activeElement?.id === 'cat-search';
-    lp.innerHTML = `<div class="lp-head"><h2>Möbel und Ausstattung</h2></div><input id="cat-search" type="search" placeholder="Katalog durchsuchen …" value="${esc(catQuery)}" autocomplete="off"/>
-      <div class="catalog">${CATEGORIES.filter((cat) => items.some((i) => i.category === cat))
-        .map((cat) => `<details open><summary>${esc(cat)}</summary><div class="cat-grid">${items.filter((i) => i.category === cat).map((i) => `<button class="cat-item${plan.tool === 'furniture' && plan.catalogKey === i.key ? ' on' : ''}" data-cat="${i.key}" draggable="true" title="${esc(i.name)} · ${num(i.width * 100, 0)} × ${num(i.depth * 100, 0)} × ${num(i.height * 100, 0)} cm">${catalogIcon(i)}<span>${esc(i.name)}</span></button>`).join('')}</div></details>`)
-        .join('')}</div>
-      <div class="lp-head small"><h3>Möbel im Geschoss (${f.furniture.length})</h3></div>
-      <div class="fur-list">${f.furniture.length ? `<table><tbody>${f.furniture.slice().sort((a, b) => a.name.localeCompare(b.name, 'de')).map((x) => `<tr data-sel="furniture|${x.id}" class="${store.isSelected('furniture', x.id) ? 'on' : ''}"><td>${esc(x.name)}</td><td class="r">${num(x.width * 100, 0)}×${num(x.depth * 100, 0)}</td></tr>`).join('')}</tbody></table>` : '<p class="note">Aus dem Katalog anklicken oder in den Plan ziehen.</p>'}</div>`;
-    if (focus) {
-      const inp = $('cat-search') as HTMLInputElement;
-      inp.focus();
-      inp.setSelectionRange(inp.value.length, inp.value.length);
-    }
-    return;
-  }
-  // übrige Phasen: Räume des Geschosses mit Zustand
+  // Räume des Geschosses mit Zustand je Phase
   const rows = f.rooms
     .map((r) => {
       const rr = d.rooms.get(r.id);
@@ -288,39 +226,22 @@ function renderLeft(): void {
       .map(({ fl, m, mr }) => `<tr data-sel="manifold|${m.id}|${fl.id}"><td>${esc(m.name)}</td><td class="r">${mr?.outlets ?? 0}/${m.maxOutlets} · ${num(mr?.heat ?? 0, 0)} W</td></tr>`)
       .join('') || '<tr><td colspan="2" class="muted">noch kein Verteiler</td></tr>'}</tbody></table></div>`;
   const importCard =
-    store.phase === 'build'
+    store.phase === 'build' && !f.background
       ? `<div class="lp-import"><h3>Vorlage für ${esc(f.name)}</h3><div class="imp-grid"><button class="btn small" data-cmd="pdf">PDF</button><button class="btn small" data-cmd="dxf">DXF</button><button class="btn small" data-cmd="image">Bild</button><button class="btn small" data-cmd="ifc">IFC</button></div><p class="note">Grundriss laden, Maßstab prüfen, dann Räume aufziehen (R). IFC übernimmt Räume und Wände direkt.</p></div>`
       : '';
   lp.innerHTML = `${importCard}<div class="lp-head"><h2>Räume · ${esc(f.name)}</h2></div><div class="fur-list rooms"><table><tbody>${rows || '<tr><td class="muted">keine Räume</td></tr>'}</tbody></table></div>${extra}`;
 }
 
-$('leftpanel').addEventListener('input', (e) => {
-  const el = e.target as HTMLInputElement;
-  if (el.id === 'cat-search') {
-    catQuery = el.value.trim().toLowerCase();
-    renderLeft();
-  }
-});
 $('leftpanel').addEventListener('click', (e) => {
   const t = e.target as HTMLElement;
   const cmd = t.closest<HTMLElement>('[data-cmd]');
   if (cmd) return void runCommand(cmd.dataset.cmd!);
-  const cat = t.closest<HTMLElement>('[data-cat]');
-  if (cat) {
-    plan.catalogKey = cat.dataset.cat!;
-    plan.setTool('furniture');
-    return;
-  }
   const row = t.closest<HTMLElement>('[data-sel]');
   if (row) {
     const [kind, id, fid] = row.dataset.sel!.split('|');
     if (fid && fid !== store.activeFloorId) store.setFloor(fid);
     store.select({ kind: kind as never, id });
   }
-});
-$('leftpanel').addEventListener('dragstart', (e) => {
-  const b = (e.target as HTMLElement).closest<HTMLElement>('[data-cat]');
-  if (b) e.dataTransfer?.setData('text/x-heatcircuits-furniture', b.dataset.cat!);
 });
 
 // ---------- Geschosse ----------
@@ -333,10 +254,8 @@ function renderLevels(): void {
 $('levels').addEventListener('click', (e) => {
   const b = (e.target as HTMLElement).closest<HTMLElement>('button');
   if (!b) return;
-  if (b.dataset.lvl) {
-    store.setFloor(b.dataset.lvl);
-    view3d.syncWalkLevel();
-  } else if (b.hasAttribute('data-lvl-add')) addFloorDialog();
+  if (b.dataset.lvl) store.setFloor(b.dataset.lvl);
+  else if (b.hasAttribute('data-lvl-add')) addFloorDialog();
 });
 $('levels').addEventListener('dblclick', async (e) => {
   const b = (e.target as HTMLElement).closest<HTMLElement>('[data-lvl]');
@@ -378,72 +297,6 @@ function addFloorDialog(): void {
   });
 }
 
-// ---------- Layout: Plan / geteilt / 3D ----------
-function setLayout(m: Layout): void {
-  if (mode === 'loop') m = 'plan';
-  layout = m;
-  $('stage').dataset.layout = m;
-  document.querySelectorAll<HTMLElement>('#layout-switch button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.layout === m)));
-  try {
-    localStorage.setItem('hc.layout', m);
-  } catch {
-    /* ohne Speicher */
-  }
-  $('tool-options').hidden = m === '3d';
-  requestAnimationFrame(() => {
-    plan.render();
-    if (m !== 'plan') view3d.rebuild();
-  });
-}
-$('layout-switch').addEventListener('click', (e) => {
-  const b = (e.target as HTMLElement).closest<HTMLElement>('[data-layout]');
-  if (b) setLayout(b.dataset.layout as Layout);
-});
-(() => {
-  const sp = $('splitter');
-  const c = $('stage');
-  sp.addEventListener('pointerdown', (e) => {
-    sp.setPointerCapture(e.pointerId);
-    const move = (ev: PointerEvent) => {
-      const r = c.getBoundingClientRect();
-      c.style.setProperty('--split', `${Math.min(85, Math.max(15, ((ev.clientY - r.top) / r.height) * 100))}%`);
-    };
-    const up = () => {
-      sp.removeEventListener('pointermove', move);
-      sp.removeEventListener('pointerup', up);
-      plan.render();
-    };
-    sp.addEventListener('pointermove', move);
-    sp.addEventListener('pointerup', up);
-  });
-})();
-
-function render3dCtl(): void {
-  const o = view3d.options;
-  const walk = view3d.mode === 'walk';
-  $('view3d-ctl').innerHTML = `<div class="seg"><button data-v3mode="orbit" class="${walk ? '' : 'on'}" title="Ziehen dreht, rechts verschiebt, Rad zoomt">Luftbild</button><button data-v3mode="walk" class="${walk ? 'on' : ''}" title="W A S D / Pfeile, ziehen schaut, Q/E Höhe">Rundgang</button></div>
-    <button class="toggle${o.allLevels ? ' on' : ''}" data-v3="allLevels">alle Geschosse</button>
-    <button class="toggle${o.showRoof ? ' on' : ''}" data-v3="showRoof">Dach</button>
-    <button class="toggle${o.showHeating ? ' on' : ''}" data-v3="showHeating">Heizung</button>
-    <button class="toggle${o.shadows ? ' on' : ''}" data-v3="shadows">Schatten</button>`;
-}
-$('view3d-ctl').addEventListener('click', (e) => {
-  const b = (e.target as HTMLElement).closest<HTMLElement>('button');
-  if (!b) return;
-  if (b.dataset.v3mode) {
-    view3d.setMode(b.dataset.v3mode as 'orbit' | 'walk');
-    if (b.dataset.v3mode === 'walk') {
-      view3d.renderer.domElement.focus();
-      $('hint').textContent = 'Rundgang: W/S vor/zurück, A/D seitlich, Pfeile drehen, Maus ziehen schaut, Q/E Höhe. Geschosswahl setzt die Augenhöhe.';
-    }
-  } else if (b.dataset.v3) {
-    const k = b.dataset.v3 as 'allLevels' | 'showRoof' | 'showHeating' | 'shadows';
-    view3d.options[k] = !view3d.options[k];
-    view3d.rebuild();
-  }
-  render3dCtl();
-});
-
 // ---------- Automatische Verteilung ----------
 function runAutoLayout(afterPlacement: boolean): void {
   if (!store.project.floors.some((f) => f.manifolds.length)) {
@@ -461,7 +314,7 @@ function runAutoLayout(afterPlacement: boolean): void {
 async function recognize(floorId: string, opts: RecognizeOptions): Promise<void> {
   const floor = store.project.floors.find((f) => f.id === floorId);
   const bg = floor?.background;
-  if (!floor || !bg || !store.images[bg.imageId]) return toast('Für dieses Geschoss ist kein Grundrissbild geladen.', 'warn');
+  if (!floor || !bg || !store.images[bg.imageId]) return toast('Für dieses Geschoss ist keine Zeichnung geladen.', 'warn');
   if (!bg.calibrated) return toast('Bitte zuerst den Maßstab kalibrieren.', 'warn');
   try {
     $('saved').textContent = 'Erkenne Räume …';
@@ -538,10 +391,9 @@ $('file-image').addEventListener('change', async (e) => {
       f.background = { imageId, widthPx: w, heightPx: h, pxPerM: w / 20, offset: bounds ? v(bounds.min.x - 1, bounds.min.y - 1) : v(-1, -1), opacity: 0.6, visible: true, locked: false, calibrated: false };
     });
     if (store.phase !== 'build') setPhase('build');
-    if (layout === '3d') setLayout('split');
     plan.fit();
     plan.setTool('calibrate');
-    toast('Grundriss geladen. Klicken Sie zwei Punkte mit bekanntem Abstand an, um den Maßstab zu kalibrieren.');
+    toast('Bild geladen. Klicken Sie zwei Punkte mit bekanntem Abstand an, um den Maßstab zu kalibrieren.');
   } catch {
     toast('Das Bild konnte nicht gelesen werden. Unterstützt werden PNG, JPG, WebP, GIF und SVG.', 'warn');
   }
@@ -690,12 +542,6 @@ $('file-project').addEventListener('change', async (e) => {
   if (!file) return;
   try {
     const text = await file.text();
-    const raw = JSON.parse(text);
-    if (isHausCad(raw)) {
-      const r = fromHausCad(raw);
-      loadProject(r.project, r.images, `HausCAD-Projekt „${r.project.name}“ übernommen.`);
-      return;
-    }
     const pf = parseProjectFile(text);
     loadProject(pf.project, pf.images ?? {}, `„${pf.project.name}“ geöffnet.`);
   } catch (err) {
@@ -707,11 +553,7 @@ function loadProject(project: Project, images: ImageStore, message: string): voi
   store.load(migrateProject(project), images);
   plan.setTool('select');
   if (wallView.isOpen) wallView.close();
-  requestAnimationFrame(() => {
-    plan.fit();
-    view3d.rebuild();
-    view3d.fit();
-  });
+  requestAnimationFrame(() => plan.fit());
   toast(message);
 }
 
@@ -731,12 +573,11 @@ function startNew(): void {
 
 function startEntry(entry: WizardEntry): void {
   setPhase('build');
-  requestAnimationFrame(() => {
-    plan.fit();
-    view3d.rebuild();
-  });
+  requestAnimationFrame(() => plan.fit());
   if (entry === 'image') $('file-image').click();
   else if (entry === 'dxf') $('file-dxf').click();
+  else if (entry === 'pdf') $('file-pdf').click();
+  else if (entry === 'ifc') $('file-ifc').click();
   else if (entry === 'sample') {
     const s = createSampleProject();
     loadProject(s.project, s.images, 'Beispielprojekt geladen.');
@@ -795,25 +636,6 @@ async function runCommand(cmd: string): Promise<void> {
     case 'export-dxf':
       if ((await offerDownload(`${base}_${safeFilename(store.floor.name)}.dxf`, exportDxf(store.project, store.floor), 'application/dxf')) === 'saved') toast('DXF exportiert.');
       return;
-    case 'export-png': {
-      if (layout === 'plan') setLayout('split');
-      await new Promise((r) => requestAnimationFrame(r));
-      view3d.rebuild();
-      const blob = await (await fetch(view3d.snapshot())).blob();
-      if ((await offerDownload(`${base}_3D.png`, blob, 'image/png')) === 'saved') toast('3D-Ansicht exportiert.');
-      return;
-    }
-    case 'export-glb': {
-      const { GLTFExporter } = await import('three/examples/jsm/exporters/GLTFExporter.js');
-      view3d.rebuild();
-      new GLTFExporter().parse(
-        view3d.exportGroup(),
-        (res) => void offerDownload(`${base}.glb`, new Blob([res as ArrayBuffer], { type: 'model/gltf-binary' }), 'model/gltf-binary').then((r) => r === 'saved' && toast('3D-Modell exportiert.')),
-        () => toast('GLB-Export fehlgeschlagen.', 'warn'),
-        { binary: true },
-      );
-      return;
-    }
     case 'export-csv':
       return exportCsv();
     case 'report':
@@ -826,22 +648,22 @@ async function runCommand(cmd: string): Promise<void> {
 function showHelp(): void {
   const m = openModal('Bedienung', { wide: true });
   const rows: [string, string][] = [
-    ['1 – 5 (mit ⇧)', 'Arbeitsphase: Grundriss, Bauteile, Heizflächen, Heizkreise, Ergebnisse'],
+    ['1 – 5 (mit ⇧)', 'Arbeitsphase: Plan, Heizlast, Heizflächen, Heizkreise, Bericht'],
     ['V / H', 'Auswählen / Ansicht verschieben (auch Leertaste, mittlere Maustaste)'],
-    ['R / W / P', 'Raum aufziehen / Wand zeichnen (Länge tippen + Enter) / Raum als Polygon'],
-    ['O / T / U', 'Tür oder Fenster / Treppe / Luftraum'],
-    ['F / D / X / K', 'Möbel / Bemaßung / Text / Maßstab des Grundrissbilds'],
+    ['K', 'Maßstab der Zeichnung: zwei Punkte mit bekanntem Abstand'],
+    ['R / P / U', 'Raum aufziehen / Raum als Polygon / Aussparung (Treppenloch, Einbauten)'],
+    ['W / O', 'Wand nachzeichnen (Länge tippen + Enter) / Tür oder Fenster'],
+    ['D / X', 'Bemaßung / Text'],
     ['M / G / L', 'Verteiler / Wärmeerzeuger / Anbindeleitung'],
     ['Y', 'Format übertragen'],
     ['Q', 'Auswahl um 90° drehen'],
     ['Pfeile', 'Auswahl um 1 cm verschieben (⇧ 10 cm)'],
-    ['⌥ / Alt', 'beim Zeichnen: Fangen aus · auf freier Fläche: Vorlage verschieben'],
-    ['1 / 2 / 3', 'Plan / geteilt / 3D'],
+    ['⌥ / Alt', 'beim Zeichnen: Fangen aus · auf freier Fläche: Zeichnung verschieben'],
     ['Bild ↑ / ↓', 'Geschoss wechseln'],
-    ['Doppelklick', 'Grundriss: Raum erkennen · Bauteile/Heizflächen: Wandansicht'],
+    ['Doppelklick', 'Plan: Raum erkennen · Heizflächen: Wandansicht'],
     ['⌘/Strg Z, ⇧Z, C, V, X, D, A, S, O', 'Rückgängig, Wiederholen, Kopieren, Einfügen, Ausschneiden, Duplizieren, Alles, Speichern, Öffnen'],
   ];
-  m.body.innerHTML = `<table class="help">${rows.map(([k, t]) => `<tr><td><kbd>${esc(k)}</kbd></td><td>${esc(t)}</td></tr>`).join('')}</table><p class="note">Rundgang in 3D: W A S D, Pfeiltasten, Maus ziehen, Q/E für die Höhe.</p>`;
+  m.body.innerHTML = `<table class="help">${rows.map(([k, t]) => `<tr><td><kbd>${esc(k)}</kbd></td><td>${esc(t)}</td></tr>`).join('')}</table>`;
 }
 
 // ---------- Ergebnisse ----------
@@ -933,32 +755,14 @@ $('btn-zoom-out').addEventListener('click', () => plan.zoom(0.8));
 $('btn-fit').addEventListener('click', () => plan.fit());
 const darkQuery = matchMedia('(prefers-color-scheme: dark)');
 const isDark = () => (document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark' : darkQuery.matches);
-/** Token-Farbe aufgelöst (light-dark wird erst an einer Eigenschaft berechnet) */
-function cssColor(token: string): string {
-  const probe = document.createElement('span');
-  probe.style.color = `var(${token})`;
-  probe.hidden = true;
-  document.body.appendChild(probe);
-  const c = getComputedStyle(probe).color;
-  probe.remove();
-  return c;
-}
 function applyTheme(): void {
   const dark = isDark();
   $('btn-theme').innerHTML = dark
     ? '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg>'
     : '<svg viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/></svg>';
   $('btn-theme').title = dark ? 'Helles Farbschema' : 'Dunkles Farbschema';
-  view3d.setBackground(cssColor('--view-bg'), dark);
   plan.render();
 }
-$('btn-mode').addEventListener('click', () => {
-  setMode(mode === 'full' ? 'loop' : 'full');
-  if (mode === 'full') {
-    setLayout('split');
-    toast('Erweitert: Möbel, Treppen und 3D-Ansicht sind eingeblendet.');
-  }
-});
 $('btn-theme').addEventListener('click', () => {
   const root = document.documentElement;
   root.dataset.theme = isDark() ? 'light' : 'dark';
@@ -997,19 +801,18 @@ function selectAll(): void {
   store.select([
     ...f.walls.map((x) => ({ kind: 'wall' as const, id: x.id })),
     ...f.rooms.map((x) => ({ kind: 'room' as const, id: x.id })),
-    ...f.furniture.map((x) => ({ kind: 'furniture' as const, id: x.id })),
-    ...f.stairs.map((x) => ({ kind: 'stair' as const, id: x.id })),
+    ...f.voids.map((x) => ({ kind: 'void' as const, id: x.id })),
     ...f.dimensions.map((x) => ({ kind: 'dimension' as const, id: x.id })),
     ...f.labels.map((x) => ({ kind: 'label' as const, id: x.id })),
   ]);
 }
 
-const KEY_TOOLS: Record<string, Tool> = { v: 'select', h: 'pan', w: 'wall', r: 'roomRect', p: 'room', o: 'opening', t: 'stair', u: 'void', f: 'furniture', d: 'dimension', x: 'label', k: 'calibrate', m: 'manifold', g: 'heatSource', l: 'route', y: 'painter' };
+const KEY_TOOLS: Record<string, Tool> = { v: 'select', h: 'pan', w: 'wall', r: 'roomRect', p: 'room', o: 'opening', u: 'void', d: 'dimension', x: 'label', k: 'calibrate', m: 'manifold', g: 'heatSource', l: 'route', y: 'painter' };
 
 window.addEventListener('keydown', (e) => {
   if (document.querySelector('.overlay')) return;
   const t = e.target as HTMLElement;
-  if (t.closest('input, select, textarea') || t === view3d.renderer.domElement) return;
+  if (t.closest('input, select, textarea')) return;
   const mod = e.metaKey || e.ctrlKey;
   const k = e.key.toLowerCase();
   if (plan.key(e)) {
@@ -1059,7 +862,6 @@ window.addEventListener('keydown', (e) => {
     if (sorted[i]) {
       e.preventDefault();
       store.setFloor(sorted[i].id);
-      view3d.syncWalkLevel();
     }
     return;
   }
@@ -1084,13 +886,9 @@ window.addEventListener('keydown', (e) => {
     if (PHASES[n]) setPhase(PHASES[n].id);
     return;
   }
-  if (k === '1') return setLayout('plan');
-  if (k === '2') return setLayout('split');
-  if (k === '3') return setLayout('3d');
   if (k === 'q' && store.selection.length && store.phase === 'build') return store.commit((_p, f) => rotateSelection(f, store.selection, e.shiftKey ? -90 : 90));
   const tool = KEY_TOOLS[k];
-  if (tool && toolsFor(store.phase).includes(tool)) {
-    if (layout === '3d') setLayout('split');
+  if (tool && PHASE_TOOLS[store.phase].includes(tool)) {
     if (wallView.isOpen) wallView.close();
     plan.setTool(tool);
   }
@@ -1123,24 +921,16 @@ store.on((reason) => {
   }
   if (reason === 'phase') renderTools();
   if (reason === 'project' || reason === 'load') scheduleSave();
-  if (layout !== 'plan' && reason !== 'live') view3d.requestRebuild();
-  if (reason === 'live' && layout !== 'plan') view3d.requestRebuild();
 });
 
 // ---------- Start ----------
 try {
   const th = localStorage.getItem('hc.theme');
   if (th) document.documentElement.dataset.theme = th;
-  if (localStorage.getItem('hc.mode') === 'full') mode = 'full';
-  const lay = localStorage.getItem('hc.layout') as Layout | null;
-  if (lay === 'plan' || lay === 'split' || lay === '3d') layout = lay;
 } catch {
   /* ohne Speicher */
 }
-render3dCtl();
 applyTheme();
-setMode(mode, false);
-setLayout(layout);
 renderTools();
 renderLevels();
 renderHeader();
@@ -1148,20 +938,12 @@ renderPhasebar();
 props.render();
 renderLeft();
 plan.setTool('select');
-requestAnimationFrame(() => {
-  plan.fit();
-  view3d.rebuild();
-  view3d.fit();
-});
+requestAnimationFrame(() => plan.fit());
 
 loadAutosave().then((file) => {
   if (file) {
     store.load(migrateProject(file.project), file.images ?? {});
     toast(`Zuletzt bearbeitetes Projekt „${file.project.name}“ wiederhergestellt.`);
-    requestAnimationFrame(() => {
-      view3d.rebuild();
-      view3d.fit();
-    });
   } else toast('Beispielprojekt geladen. „Projekt › Neues Projekt“ startet den Assistenten.');
   $('saved').textContent = 'Im Browser gesichert';
 });

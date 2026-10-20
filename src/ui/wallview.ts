@@ -132,7 +132,7 @@ export class WallView {
     // Kopfzeile
     const surfaces = room ? room.surfaces.filter((s) => s.kind === 'wall' && s.wallId === wall.id) : [];
     this.head.innerHTML = `
-      <button class="btn small" data-act="back" aria-label="Zurück zum Grundriss">← Grundriss</button>
+      <button class="btn small" data-act="back" aria-label="Zurück zum Plan">← Plan</button>
       <div class="wv-title"><b>${esc(wallLabel(wall, room ?? null, this.store.project.site.north))}</b><span class="muted"> · ${num(L, 2)} × ${num(H, 2)} m</span></div>
       <label class="wv-room" for="wv-room">Raumseite <select id="wv-room">${rooms.map((r) => `<option value="${r.id}"${r.id === this.roomId ? ' selected' : ''}>${esc(r.name)}</option>`).join('')}</select></label>
       ${room && room.heated && surfaces.length === 0 ? `<button class="btn small primary" data-act="add-field">+ Wandheizung</button>` : ''}

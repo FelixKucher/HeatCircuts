@@ -1,19 +1,17 @@
 // Planeditor (SVG, Weltkoordinaten in m): Gebäude zeichnen (Wände mit Gehrung, Räume, Öffnungen, Treppen,
 // Möbel, Maße), Heizung planen (Verteiler, Wärmeerzeuger, Anbindeleitungen) und „Format übertragen“.
 
-import { CATALOG_BY_KEY } from '../cad/furniture';
 import { addRectRoom, addWallChain, detectRoomAt, moveSelection } from '../cad/edit';
 import { newOpening, OPENING_STYLES } from '../cad/openings';
 import { applyFormat, pickFormat, type FormatData } from '../cad/painter';
-import { newStair } from '../cad/stairs';
-import { clampOpening, endsAt, left, nearestWall, pointOnWall, projectOnWall, wallDir, wallLength, wallOutlines } from '../cad/walls';
+import { clampOpening, endsAt, left, nearestWall, pointOnWall, projectOnWall, wallLength, wallOutlines } from '../cad/walls';
 import { floorShort, newRoom, uid } from '../model/factory';
 import { HEAT_SOURCE_TYPES } from '../model/catalog';
-import type { Floor, Furniture, OpeningStyle, Project, StairType, Vec } from '../model/types';
+import type { Floor, OpeningStyle, Project, Vec } from '../model/types';
 import type { Phase, SelItem, SelKind, Store } from '../model/store';
 import { add, area, cleanPolygon, dist, isSimplePolygon, mul, norm, pointInPolygon, sub } from '../geometry/geom';
 import { backgroundMarkup, renderLayers, SVG_DEFS } from './render';
-import { belowOf, dimensionSvg, esc, fmt, furnitureSvg, openingSymbol, PLAN_DEFS, planBaseSvg, stairSvg } from './plan-render';
+import { belowOf, dimensionSvg, esc, fmt, openingSymbol, PLAN_DEFS, planBaseSvg } from './plan-render';
 
 export type Tool =
   | 'select'
@@ -22,8 +20,6 @@ export type Tool =
   | 'room'
   | 'roomRect'
   | 'opening'
-  | 'furniture'
-  | 'stair'
   | 'void'
   | 'dimension'
   | 'label'
@@ -57,8 +53,6 @@ type Drag =
   | { type: 'wallEnd'; wallId: string; end: 'a' | 'b'; base: Floor; joined: { wallId: string; end: 'a' | 'b' }[] }
   | { type: 'roomVertex'; roomId: string; idx: number }
   | { type: 'voidVertex'; voidId: string; idx: number }
-  | { type: 'objRotate'; id: string; kind: 'furniture' | 'stair' }
-  | { type: 'objResize'; id: string; kind: 'furniture' | 'stair'; keepRatio: boolean }
   | { type: 'opening'; wallId: string; id: string; grab: number }
   | { type: 'openingEdge'; wallId: string; id: string; edge: 1 | 2 }
   | { type: 'dimEnd'; id: string; end: 'a' | 'b' | 'off' }
@@ -71,7 +65,7 @@ const ANGLE_STEP = 15;
 
 /** welche Objekte in welcher Phase gewählt werden können */
 const PICKABLE: Record<Phase, SelKind[]> = {
-  build: ['wall', 'opening', 'room', 'furniture', 'stair', 'dimension', 'label', 'void', 'manifold', 'heatSource'],
+  build: ['wall', 'opening', 'room', 'dimension', 'label', 'void', 'manifold', 'heatSource'],
   parts: ['wall', 'opening', 'room', 'void'],
   heating: ['room', 'wall', 'opening'],
   circuits: ['room', 'manifold', 'heatSource', 'route', 'wall'],
@@ -85,12 +79,10 @@ export const HINTS: Record<Tool, string> = {
   room: 'Punkte des Raums klicken (Enter beendet) oder Doppelklick in einen von Wänden umschlossenen Bereich.',
   roomRect: 'Rechteck aufziehen: Wände (Achse) und Raum entstehen zusammen. Angrenzende Wände werden geteilt statt verdoppelt.',
   opening: 'Auf eine Wand klicken. Türen öffnen zur Seite des Mauszeigers.',
-  furniture: 'Klicken setzt das Möbel (⇧ für mehrere). Wandmöbel legen sich an die nächste Wand an (⌥ verhindert das).',
-  stair: 'Klicken setzt die Treppe. Im Geschoss darüber wird die Decke automatisch ausgespart.',
-  void: 'Umriss des Luftraums klicken, Enter beendet. Die Fläche zählt nicht zur beheizten Bodenfläche.',
+  void: 'Umriss der Aussparung klicken (Treppenloch, Einbauten, Kücheninsel), Enter beendet. Die Fläche wird nicht belegt.',
   dimension: 'Zwei Punkte klicken, dann den Abstand der Maßlinie wählen.',
   label: 'Klicken und Text eingeben.',
-  calibrate: 'Zwei Punkte mit bekanntem Abstand im Grundrissbild anklicken.',
+  calibrate: 'Zwei Punkte mit bekanntem Abstand in der Zeichnung anklicken.',
   manifold: 'Klicken platziert einen Heizkreisverteiler. Danach werden die Heizkreise automatisch verteilt.',
   heatSource: 'Klicken platziert den Wärmeerzeuger (einer je Projekt).',
   route: 'Raum anklicken, dann Wegpunkte der Anbindeleitung setzen. Klick auf den Verteiler oder Enter beendet.',
@@ -101,10 +93,6 @@ export class PlanView {
   readonly svg: SVGSVGElement;
   tool: Tool = 'select';
   openingStyle: OpeningStyle = 'door';
-  catalogKey = 'sofa3';
-  /** im Modus „Heizung“ ausgeblendete Objektarten */
-  hidden = new Set<SelKind>();
-  stairType: StairType = 'straight';
   view = { x: -2, y: -2, s: 60 };
   painter: FormatData | null = null;
   private drag: Drag | null = null;
@@ -117,7 +105,6 @@ export class PlanView {
   private dimPts: Vec[] = [];
   private routeRoom: string | null = null;
   private lastClick = 0;
-  private altKey = false;
 
   constructor(
     private host: HTMLElement,
@@ -138,8 +125,6 @@ export class PlanView {
     this.svg.addEventListener('dblclick', (e) => this.onDbl(e));
     this.svg.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
     this.svg.addEventListener('contextmenu', (e) => e.preventDefault());
-    this.svg.addEventListener('dragover', (e) => e.preventDefault());
-    this.svg.addEventListener('drop', (e) => this.onDrop(e));
     new ResizeObserver(() => this.render()).observe(host);
   }
 
@@ -170,7 +155,6 @@ export class PlanView {
     const pts: Vec[] = [];
     for (const w of l.walls) pts.push(w.a, w.b);
     for (const r of l.rooms) pts.push(...r.polygon);
-    for (const f of l.furniture) pts.push(f.pos);
     for (const m of l.manifolds) pts.push(m.pos);
     if (l.background) {
       const b = l.background;
@@ -294,17 +278,7 @@ export class PlanView {
     }
     if (it.kind === 'void' && geom) {
       const vd = l.voids.find((x) => x.id === it.id);
-      return vd && !vd.stairId && vd.kind === 'void' ? vd.polygon.map((p, i) => c(p, 'void-v', '', ` data-idx="${i}"`)).join('') : '';
-    }
-    if ((it.kind === 'furniture' || it.kind === 'stair') && geom) {
-      const f = it.kind === 'furniture' ? l.furniture.find((x) => x.id === it.id) : l.stairs.find((x) => x.id === it.id);
-      if (!f) return '';
-      const w = 'depth' in f ? f.width : f.type === 'lshape' ? f.width + f.length2 : f.type === 'spiral' ? f.length : f.width;
-      const d = 'depth' in f ? f.depth : f.length;
-      const a = (f.angle * Math.PI) / 180;
-      const T = (x: number, y: number) => ({ x: f.pos.x + x * Math.cos(a) - y * Math.sin(a), y: f.pos.y + x * Math.sin(a) + y * Math.cos(a) });
-      const rp = T(0, -d / 2 - 0.35);
-      return `<line x1="${f.pos.x}" y1="${f.pos.y}" x2="${rp.x}" y2="${rp.y}" class="p-handle-line"/>` + c(rp, 'rotate', 'rot') + c(T(w / 2, d / 2), 'resize', 'res');
+      return vd ? vd.polygon.map((p, i) => c(p, 'void-v', '', ` data-idx="${i}"`)).join('') : '';
     }
     if (it.kind === 'opening' && geom) {
       const w = l.walls.find((x) => x.id === it.wallId);
@@ -379,8 +353,6 @@ export class PlanView {
         s += this.tag(h, `${OPENING_STYLES[this.openingStyle].label} ${fmt(o.width)} × ${fmt(o.height)} m · Abstand ${fmt(o.offset - o.width / 2)} m`);
       }
     }
-    if (this.tool === 'furniture' && h) s += furnitureSvg(this.placeFurniture(this.makeFurniture(h)), false, true);
-    if (this.tool === 'stair' && h) s += stairSvg({ ...newStair(this.stairType, h), id: 'preview' }, l.storeyHeight, false, true);
     if (this.tool === 'dimension' && this.dimPts.length && h) {
       s += this.dimPts.length === 1 ? dimensionSvg(this.dimPts[0], h, 0, this.view.s, ' live') : dimensionSvg(this.dimPts[0], this.dimPts[1], this.dimOffset(h), this.view.s, ' live');
     }
@@ -475,7 +447,7 @@ export class PlanView {
   }
 
   private hit(e: { clientX: number; clientY: number }): SelItem | null {
-    const allowed = PICKABLE[this.store.phase].filter((k) => !this.hidden.has(k));
+    const allowed = PICKABLE[this.store.phase];
     const els = document.elementsFromPoint(e.clientX, e.clientY);
     for (const start of els) {
       let el: Element | null = start;
@@ -496,7 +468,6 @@ export class PlanView {
   private onDown(e: PointerEvent): void {
     this.svg.setPointerCapture(e.pointerId);
     const p = this.world(e);
-    this.altKey = e.altKey;
     if (e.button === 1 || e.button === 2 || this.tool === 'pan' || this.spaceDown) {
       if (e.button === 2 && this.tool === 'wall' && this.chain.length) {
         this.finishChain();
@@ -572,20 +543,6 @@ export class PlanView {
         s.select({ kind: 'opening', id: o.id, wallId: nw.wall.id });
         return;
       }
-      case 'furniture': {
-        const f = this.placeFurniture(this.makeFurniture(p));
-        s.commit((_p, fl) => fl.furniture.push(f));
-        s.select({ kind: 'furniture', id: f.id });
-        if (!e.shiftKey) this.setTool('select');
-        return;
-      }
-      case 'stair': {
-        const st = newStair(this.stairType, this.snap(p, null, e).p);
-        s.commit((_p, fl) => fl.stairs.push(st));
-        s.select({ kind: 'stair', id: st.id });
-        this.setTool('select');
-        return;
-      }
       case 'dimension': {
         const sp = this.snap(p, this.dimPts[0] ?? null, e).p;
         if (this.dimPts.length < 2) {
@@ -609,7 +566,7 @@ export class PlanView {
         return;
       case 'calibrate': {
         if (!l.background) {
-          this.cb.toast('Zuerst ein Grundrissbild laden.', 'warn');
+          this.cb.toast('Zuerst eine Zeichnung laden (PDF, DXF oder Bild).', 'warn');
           return;
         }
         this.calib.push(p);
@@ -709,8 +666,6 @@ export class PlanView {
         this.drag = { type: 'wallEnd', wallId: w.id, end, base: JSON.parse(JSON.stringify(l)), joined: e.altKey ? [] : joined };
       } else if (handle === 'room-v' && it) this.drag = { type: 'roomVertex', roomId: it.id, idx: Number(ds.idx) };
       else if (handle === 'void-v' && it) this.drag = { type: 'voidVertex', voidId: it.id, idx: Number(ds.idx) };
-      else if (handle === 'rotate' && it) this.drag = { type: 'objRotate', id: it.id, kind: it.kind as 'furniture' | 'stair' };
-      else if (handle === 'resize' && it) this.drag = { type: 'objResize', id: it.id, kind: it.kind as 'furniture' | 'stair', keepRatio: e.shiftKey };
       else if ((handle === 'op-1' || handle === 'op-2') && it) this.drag = { type: 'openingEdge', wallId: it.wallId!, id: it.id, edge: handle === 'op-1' ? 1 : 2 };
       else if (handle.startsWith('dim-') && it) this.drag = { type: 'dimEnd', id: it.id, end: handle === 'dim-a' ? 'a' : handle === 'dim-b' ? 'b' : 'off' };
       return;
@@ -751,7 +706,7 @@ export class PlanView {
     if (!d) {
       if (this.tool !== 'select' && this.tool !== 'pan' && this.tool !== 'painter') {
         const from = this.tool === 'wall' || this.tool === 'route' ? (this.chain[this.chain.length - 1] ?? null) : this.tool === 'dimension' && this.dimPts.length === 1 ? this.dimPts[0] : null;
-        const sn = this.tool === 'opening' || this.tool === 'furniture' || this.tool === 'calibrate' ? ({ p, kind: 'free' } as Snap) : this.snap(p, from, e);
+        const sn = this.tool === 'opening' || this.tool === 'calibrate' ? ({ p, kind: 'free' } as Snap) : this.snap(p, from, e);
         this.snapInfo = sn;
         this.hover = sn.p;
       } else {
@@ -789,10 +744,6 @@ export class PlanView {
         const sel = s.selection;
         s.live((pr, fl) => {
           moveSelection(d.base, fl, sel, delta, pr, d.baseProject);
-          if (sel.length === 1 && sel[0].kind === 'furniture' && st.magnetism && !e.altKey) {
-            const f = fl.furniture.find((x) => x.id === sel[0].id);
-            if (f) Object.assign(f, this.placeFurniture(f));
-          }
         });
         return;
       }
@@ -827,41 +778,6 @@ export class PlanView {
         });
         return;
       }
-      case 'objRotate':
-        s.live((_p, fl) => {
-          const f = d.kind === 'furniture' ? fl.furniture.find((x) => x.id === d.id) : fl.stairs.find((x) => x.id === d.id);
-          if (!f) return;
-          let a = (Math.atan2(p.y - f.pos.y, p.x - f.pos.x) * 180) / Math.PI + 90;
-          if (!e.altKey) a = Math.round(a / 15) * 15;
-          f.angle = ((a % 360) + 360) % 360;
-        });
-        return;
-      case 'objResize':
-        s.live((_p, fl) => {
-          const f = d.kind === 'furniture' ? fl.furniture.find((x) => x.id === d.id) : fl.stairs.find((x) => x.id === d.id);
-          if (!f) return;
-          const a = (-f.angle * Math.PI) / 180;
-          const q = sub(p, f.pos);
-          const lx = q.x * Math.cos(a) - q.y * Math.sin(a);
-          const ly = q.x * Math.sin(a) + q.y * Math.cos(a);
-          const r = (x: number) => Math.max(0.1, Math.round(x * 2 * 100) / 100);
-          if ('depth' in f) {
-            if (d.keepRatio || e.shiftKey) {
-              const k = r(lx) / f.width;
-              f.depth = Math.max(0.1, Math.round(f.depth * k * 100) / 100);
-              f.height = Math.max(0.05, Math.round(f.height * k * 100) / 100);
-              f.width = r(lx);
-            } else {
-              f.width = r(lx);
-              f.depth = r(ly);
-            }
-          } else if (f.type === 'spiral') f.length = f.width = r(Math.max(lx, ly));
-          else {
-            f.width = r(lx);
-            f.length = r(ly);
-          }
-        });
-        return;
       case 'opening': {
         const nw = nearestWall(l.walls, p, 0.4);
         s.live((_p, fl) => {
@@ -968,13 +884,12 @@ export class PlanView {
       }
       const inR = (q: Vec) => q.x >= x0 && q.x <= x1 && q.y >= y0 && q.y <= y1;
       const l = s.floor;
-      const allowed = PICKABLE[s.phase].filter((k) => !this.hidden.has(k));
+      const allowed = PICKABLE[s.phase];
       const items: SelItem[] = d.add ? [...s.selection] : [];
       const push = (kind: SelKind, id: string) => allowed.includes(kind) && items.push({ kind, id });
       for (const w of l.walls) if (inR(w.a) && inR(w.b)) push('wall', w.id);
       for (const r of l.rooms) if (r.polygon.every(inR)) push('room', r.id);
-      for (const f of l.furniture) if (inR(f.pos)) push('furniture', f.id);
-      for (const x of l.stairs) if (inR(x.pos)) push('stair', x.id);
+      for (const x of l.voids) if (x.polygon.every(inR)) push('void', x.id);
       for (const x of l.dimensions) if (inR(x.a) && inR(x.b)) push('dimension', x.id);
       for (const x of l.labels) if (inR(x.pos)) push('label', x.id);
       for (const m of l.manifolds) if (inR(m.pos)) push('manifold', m.id);
@@ -1061,16 +976,6 @@ export class PlanView {
       fl.rooms.push(r);
     });
     this.store.select({ kind: 'room', id });
-  }
-
-  private onDrop(e: DragEvent): void {
-    e.preventDefault();
-    const key = e.dataTransfer?.getData('text/x-heatcircuits-furniture');
-    if (!key || !CATALOG_BY_KEY[key]) return;
-    this.catalogKey = key;
-    const f = this.placeFurniture(this.makeFurniture(this.world(e)));
-    this.store.commit((_p, fl) => fl.furniture.push(f));
-    this.store.select({ kind: 'furniture', id: f.id });
   }
 
   // ---------- Abschluss von Werkzeugen ----------
@@ -1200,34 +1105,6 @@ export class PlanView {
     const [a, b] = this.dimPts;
     const n = left(norm(sub(b, a)));
     return Math.round(((p.x - a.x) * n.x + (p.y - a.y) * n.y) * 100) / 100;
-  }
-
-  makeFurniture(p: Vec): Furniture {
-    const it = CATALOG_BY_KEY[this.catalogKey];
-    return { id: uid('F'), catalog: it.key, name: it.name, pos: p, angle: 0, width: it.width, depth: it.depth, height: it.height, elevation: it.elevation ?? 0, color: it.color, mirrored: false, visible: true };
-  }
-
-  /** Magnetismus: Rückseite von Wandmöbeln an die nächste Wand anlegen und ausrichten */
-  placeFurniture(f: Furniture): Furniture {
-    const it = CATALOG_BY_KEY[f.catalog];
-    if (!it?.wallSide || !this.store.project.settings.magnetism || this.altKey) return f;
-    const reach = f.depth / 2 + 0.35;
-    let best: { d: number; pos: Vec; angle: number } | null = null;
-    for (const w of this.store.floor.walls) {
-      const L = wallLength(w);
-      const { t, off } = projectOnWall(w, f.pos);
-      if (t < -0.1 || t > L + 0.1) continue;
-      const face = Math.abs(off) - w.thickness / 2;
-      if (face < -0.05 || face > reach) continue;
-      const d = Math.abs(face - f.depth / 2);
-      if (best && d >= best.d) continue;
-      const n = mul(left(wallDir(w)), off >= 0 ? 1 : -1);
-      const tt = Math.min(L - f.width / 2, Math.max(f.width / 2, t));
-      const pos = add(pointOnWall(w, tt), mul(n, w.thickness / 2 + f.depth / 2 + 0.005));
-      const angle = (Math.atan2(n.y, n.x) * 180) / Math.PI - 90;
-      best = { d, pos, angle: ((angle % 360) + 360) % 360 };
-    }
-    return best ? { ...f, pos: best.pos, angle: Math.round(best.angle * 100) / 100 } : f;
   }
 }
 
