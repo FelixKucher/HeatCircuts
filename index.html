@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>HeatCircuits</title>
+    <meta name="claude:viewport-fit-sides" content="cover" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Cpath d=%22M6 26V9a3 3 0 0 1 3-3h14a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H13a3 3 0 0 1-3-3v-8a3 3 0 0 1 3-3h6a3 3 0 0 1 3 3v4%22 fill=%22none%22 stroke=%22%23cc3a2b%22 stroke-width=%222.6%22 stroke-linecap=%22round%22/%3E%3C/svg%3E" />
+    <meta name="description" content="Heizkreise auf einer geladenen Zeichnung planen: PDF, DXF, Bild oder IFC als Vorlage, Räume nachzeichnen, Heizlast nach EN 12831, Loops und Abgleich nach EN 1264, Bericht DIN A4." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" />
+    <script>
+      try {
+        var th = localStorage.getItem('hc.theme');
+        if (th === 'light' || th === 'dark') document.documentElement.dataset.theme = th;
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="brand" aria-label="HeatCircuits">
+          <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+            <path d="M6 26V9a3 3 0 0 1 3-3h14a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H13a3 3 0 0 1-3-3v-8a3 3 0 0 1 3-3h6a3 3 0 0 1 3 3v4" class="bm-supply" />
+            <path d="M18 17v-1" class="bm-return" />
+          </svg>
+          <span class="brand-name">Heat<b>Circuits</b></span>
+        </div>
+        <button class="project-name" id="btn-project-name" title="Gebäude, Klima und Bauteile bearbeiten"></button>
+        <span class="chip example" id="chip-example" hidden>Beispiel</span>
+        <nav class="menu" aria-label="Hauptmenü">
+          <div class="dropdown">
+            <button class="btn ghost" id="btn-menu" aria-haspopup="true" aria-expanded="false">Projekt</button>
+            <div class="dropdown-menu" id="menu-project" hidden>
+              <button data-cmd="new">Neues Projekt … <kbd>⌘N</kbd></button>
+              <button data-cmd="open">Öffnen … <kbd>⌘O</kbd></button>
+              <button data-cmd="save">Speichern <kbd>⌘S</kbd></button>
+              <hr />
+              <button data-cmd="pdf">PDF-Grundriss laden …</button>
+              <button data-cmd="dxf">DXF-Grundriss laden …</button>
+              <button data-cmd="image">Bild oder Scan laden …</button>
+              <button data-cmd="ifc">IFC-Modell (BIM) importieren …</button>
+              <hr />
+              <button data-cmd="report"><b>Auslegungsbericht DIN A4 …</b></button>
+              <hr />
+              <button data-cmd="export-svg">Plan als SVG</button>
+              <button data-cmd="export-svg-bg">Plan mit Vorlage als SVG</button>
+              <button data-cmd="export-dxf">Plan als DXF (AutoCAD, CADCraft)</button>
+              <button data-cmd="export-csv">Ergebnistabelle als CSV</button>
+              <hr />
+              <button data-cmd="sample">Beispielprojekt laden</button>
+              <button data-cmd="help">Tastenkürzel und Bedienung</button>
+            </div>
+          </div>
+          <button class="btn ghost" id="btn-building">Gebäude</button>
+          <button class="btn ghost" id="btn-design">Auslegung</button>
+        </nav>
+        <ol class="phasebar" id="phasebar" aria-label="Arbeitsschritte"></ol>
+        
+        <div class="undo">
+          <button class="icon-btn" id="btn-undo" title="Rückgängig (⌘Z)" aria-label="Rückgängig"><svg viewBox="0 0 24 24"><path d="M9 7 4 12l5 5M4 12h11a5 5 0 0 1 0 10h-2" /></svg></button>
+          <button class="icon-btn" id="btn-redo" title="Wiederholen (⇧⌘Z)" aria-label="Wiederholen"><svg viewBox="0 0 24 24"><path d="m15 7 5 5-5 5M20 12H9a5 5 0 0 0 0 10h2" /></svg></button>
+          <button class="icon-btn" id="btn-theme" title="Hell / Dunkel" aria-label="Farbschema wechseln"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z" /></svg></button>
+        </div>
+        <div class="summary" id="summary" aria-live="polite"></div>
+      </header>
+
+      <div class="workspace">
+        <nav class="toolbar" id="toolbar" aria-label="Werkzeuge"></nav>
+        <aside class="leftpanel" id="leftpanel" aria-label="Vorlage und Räume"></aside>
+        <main class="stage" id="stage">
+          <div class="levels" id="levels"></div>
+          <div class="tool-options" id="tool-options" hidden></div>
+          <section class="plan-host" id="plan-host">
+            <div class="zoom-ctl">
+              <button class="icon-btn" id="btn-zoom-in" aria-label="Vergrößern" title="Vergrößern (+)"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg></button>
+              <button class="icon-btn" id="btn-zoom-out" aria-label="Verkleinern" title="Verkleinern (−)"><svg viewBox="0 0 24 24"><path d="M5 12h14" /></svg></button>
+              <button class="icon-btn" id="btn-fit" aria-label="Einpassen" title="Einpassen (F)"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" /></svg></button>
+            </div>
+            <div class="compass" id="compass" title="Norden"><svg viewBox="-20 -20 40 40"><path d="M0 -16 L6 2 L0 -2 L-6 2Z" class="cmp-n"/><path d="M0 16 L6 -2 L0 2 L-6 -2Z" class="cmp-s"/><text y="-9" class="cmp-t" transform="translate(0 -3)">N</text></svg></div>
+          </section>
+          <section class="results-drawer" id="results" hidden aria-label="Ergebnisse">
+            <div class="drawer-head">
+              <div class="tabs" role="tablist">
+                <button role="tab" data-tab="rooms">Räume &amp; Heizlast</button>
+                <button role="tab" data-tab="surfaces">Heizflächen</button>
+                <button role="tab" data-tab="circuits">Heizkreise</button>
+                <button role="tab" data-tab="manifolds">Verteiler</button>
+                <button role="tab" data-tab="material">Material</button>
+              </div>
+              <div class="drawer-actions">
+                <button class="btn small primary" id="btn-report">Bericht DIN A4</button>
+                <button class="btn small" id="btn-csv">CSV exportieren</button>
+                <button class="icon-btn" id="btn-results-close" aria-label="Ergebnisse schließen"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></svg></button>
+              </div>
+            </div>
+            <div class="drawer-body" id="results-body"></div>
+          </section>
+        </main>
+        <aside class="sidebar" id="sidebar" aria-label="Eigenschaften"></aside>
+      </div>
+
+      <footer class="statusbar">
+        <span class="hint" id="hint"></span>
+        <span class="coords" id="coords"></span>
+        <span class="saved" id="saved"></span>
+      </footer>
+    </div>
+    <div id="toasts" class="toasts" aria-live="polite"></div>
+    <input type="file" id="file-image" accept="image/*" hidden />
+    <input type="file" id="file-dxf" accept=".dxf" hidden />
+    <input type="file" id="file-pdf" accept="application/pdf,.pdf" hidden />
+    <input type="file" id="file-ifc" accept=".ifc" hidden />
+    <input type="file" id="file-project" accept=".json,.hauscad,application/json" hidden />
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
